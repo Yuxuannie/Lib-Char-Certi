@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cert-data-process"
+version = "0.1.0"
+description = "Library characterization certification data_process pipeline"
+requires-python = ">=3.9"
+
+[project.scripts]
+cert_data_process = "cert_data_process.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["cert_data_process*"]
