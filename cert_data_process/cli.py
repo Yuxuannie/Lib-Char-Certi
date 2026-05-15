@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -43,10 +44,11 @@ PLANNED_STAGE_STATUS = (
         "planned_pr": "PR 3",
     },
     {
-        "stage": "lib_join_sigma",
-        "pipeline": "sigma",
+        "stage": "lib_join",
+        "pipeline": "sigma,moments",
         "implemented": False,
         "planned_pr": "PR 4",
+        "note": "Unified lib lookup core with sigma + moments output formatters",
     },
     {
         "stage": "validate_ci",
@@ -67,6 +69,36 @@ PLANNED_STAGE_STATUS = (
         "planned_pr": "PR 7",
     },
 )
+
+
+def _run_git_command(args: list[str]) -> str | None:
+    """Run a git command and return stripped stdout, or None on failure."""
+
+    try:
+        completed = subprocess.run(
+            ["git", *args],
+            check=True,
+            cwd=Path(__file__).resolve().parents[1],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return completed.stdout.strip()
+
+
+def _get_git_sha() -> str:
+    """Return the current short git SHA, with a dirty suffix when applicable."""
+
+    sha = _run_git_command(["rev-parse", "--short", "HEAD"])
+    if not sha:
+        return "unknown"
+
+    status = _run_git_command(["status", "--porcelain"])
+    if status:
+        return f"{sha}-dirty"
+    return sha
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -130,6 +162,7 @@ def write_manifests(config) -> None:
         "schema_version": 1,
         "tool": "cert_data_process",
         "tool_version": __version__,
+        "tool_git_commit_sha": _get_git_sha(),
         "created_at_utc": timestamp,
         "phase": "phase1_skeleton",
         "config": config.to_manifest_dict(),
