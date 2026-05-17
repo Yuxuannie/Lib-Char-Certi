@@ -16,6 +16,7 @@ from typing import Iterable, Optional
 
 from . import __version__
 from .config import SUPPORTED_TYPES, SUPPORTED_VENDORS, build_config, parse_csv
+from .stages.fmc_combine_data import run_fmc_combine_data
 
 OUTPUT_DIRECTORIES = (
     "logs",
@@ -34,7 +35,7 @@ PLANNED_STAGE_STATUS = (
     {
         "stage": "fmc_combine_data",
         "pipeline": "sigma",
-        "implemented": False,
+        "implemented": True,
         "planned_pr": "PR 2",
     },
     {
@@ -71,7 +72,7 @@ PLANNED_STAGE_STATUS = (
 )
 
 
-def _run_git_command(args: list[str]) -> str | None:
+def _run_git_command(args: list[str]) -> Optional[str]:
     """Run a git command and return stripped stdout, or None on failure."""
 
     try:
@@ -147,8 +148,8 @@ def write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def write_manifests(config) -> None:
-    """Write skeleton run and compatibility manifests."""
+def write_manifests(config, stage_execution=None, compatibility_stage_reports=None) -> None:
+    """Write run and compatibility manifests."""
 
     output_dir = config.output_dir
     timestamp = datetime.now(timezone.utc).isoformat()
@@ -158,39 +159,43 @@ def write_manifests(config) -> None:
     if config.run_moments:
         enabled_pipelines.append("moments")
 
+    stage_execution = list(stage_execution or [])
+    compatibility_stage_reports = list(compatibility_stage_reports or [])
+
     run_manifest = {
         "schema_version": 1,
         "tool": "cert_data_process",
         "tool_version": __version__,
         "tool_git_commit_sha": _get_git_sha(),
         "created_at_utc": timestamp,
-        "phase": "phase1_skeleton",
+        "phase": "phase1",
         "config": config.to_manifest_dict(),
         "enabled_pipelines": enabled_pipelines,
         "output_directories": list(OUTPUT_DIRECTORIES),
         "aliases": [],
         "planned_stages": list(PLANNED_STAGE_STATUS),
-        "stage_execution": [],
-        "note": "Skeleton PR only: no functional data_process stages executed.",
+        "stage_execution": stage_execution,
+        "note": "Functional stages execute only when implemented for the requested pipeline inputs.",
     }
     write_json(output_dir / "run_manifest.json", run_manifest)
 
     compatibility_report = {
         "schema_version": 1,
         "created_at_utc": timestamp,
-        "phase": "phase1_skeleton",
+        "phase": "phase1",
         "diffs": [],
+        "stage_reports": compatibility_stage_reports,
         "signoff_required": "Each non-byte-identical diff must be listed with root cause, fix path, and signoff status.",
-        "note": "No legacy-vs-new output diffs exist in skeleton mode because no functional stage outputs are produced yet.",
+        "note": "Runtime compatibility fixture comparison is not evaluated unless a stage/test supplies expected artifacts.",
     }
     write_json(output_dir / "compatibility_report.json", compatibility_report)
 
     log_file = output_dir / "logs" / "cert_data_process.log"
     log_file.write_text(
-        "cert_data_process Phase 1 skeleton run\n"
+        "cert_data_process Phase 1 run\n"
         f"created_at_utc={timestamp}\n"
         f"enabled_pipelines={','.join(enabled_pipelines)}\n"
-        "functional_stages_executed=0\n",
+        f"functional_stages_executed={len(stage_execution)}\n",
         encoding="utf-8",
     )
 
@@ -218,9 +223,19 @@ def run(argv: Optional[Iterable[str]] = None) -> int:
         parser.error(str(exc))
 
     materialize_output_tree(config.output_dir)
-    write_manifests(config)
+
+    stage_execution = []
+    compatibility_stage_reports = []
+    failed = False
+    if config.run_sigma:
+        fmc_result = run_fmc_combine_data(config)
+        stage_execution.append(fmc_result.stage_execution)
+        compatibility_stage_reports.append(fmc_result.compatibility_stage_report)
+        failed = failed or fmc_result.failed
+
+    write_manifests(config, stage_execution, compatibility_stage_reports)
     print(f"Initialized cert_data_process output tree at: {config.output_dir}")
-    return 0
+    return 1 if failed else 0
 
 
 def main(argv: Optional[Iterable[str]] = None) -> int:

@@ -5,7 +5,7 @@ import pytest
 from cert_data_process.cli import OUTPUT_DIRECTORIES, PLANNED_STAGE_STATUS, main
 
 
-def _base_args(tmp_path, output_dir):
+def _base_args(tmp_path, output_dir, *, types="delay,slew,hold,mpw"):
     return [
         "--vendor",
         "cdns",
@@ -16,7 +16,7 @@ def _base_args(tmp_path, output_dir):
         "--corners",
         "ssgnp_0p450v_m40c,ssgnp_0p465v_m40c",
         "--types",
-        "delay,slew,hold,mpw",
+        types,
         "--lib-dir",
         str(tmp_path / "libs"),
         "--output-dir",
@@ -24,9 +24,9 @@ def _base_args(tmp_path, output_dir):
     ]
 
 
-def _run_dummy(tmp_path, *, fmc=True, full_mc=True, extra_args=None):
+def _run_dummy(tmp_path, *, fmc=False, full_mc=True, extra_args=None, types="delay,slew,hold,mpw"):
     output_dir = tmp_path / "results"
-    args = _base_args(tmp_path, output_dir)
+    args = _base_args(tmp_path, output_dir, types=types)
     if fmc:
         args.extend(["--fmc-golden-dir", str(tmp_path / "fmc")])
     if full_mc:
@@ -38,6 +38,13 @@ def _run_dummy(tmp_path, *, fmc=True, full_mc=True, extra_args=None):
     run_manifest = json.loads((output_dir / "run_manifest.json").read_text(encoding="utf-8"))
     compatibility_report = json.loads((output_dir / "compatibility_report.json").read_text(encoding="utf-8"))
     return exit_code, output_dir, run_manifest, compatibility_report
+
+
+def _write_hold_fixture(root):
+    arc_dir = root / "ssgnp_0p450v_m40c_DECKS" / "hold" / "DECKS" / "hold_TESTCELL_D_rise_CP_rise_NO_CONDITION_1_1"
+    arc_dir.mkdir(parents=True)
+    (arc_dir / "summary1.csv").write_text("Nominal,Percentile LB,Percentile UB\n1e-12,0.7e-12,1.6e-12\n", encoding="utf-8")
+    (arc_dir / "summary2.csv").write_text("Nominal,Percentile LB,Percentile UB\n2e-12,1.4e-12,3.2e-12\n", encoding="utf-8")
 
 
 def test_help_runs(capsys):
@@ -59,7 +66,7 @@ def test_dummy_run_materializes_output_tree(tmp_path):
     for relative_dir in OUTPUT_DIRECTORIES:
         assert (output_dir / relative_dir).is_dir()
 
-    assert run_manifest["enabled_pipelines"] == ["sigma", "moments"]
+    assert run_manifest["enabled_pipelines"] == ["moments"]
     assert run_manifest["config"]["types"] == ["delay", "slew", "hold", "mpw"]
     assert run_manifest["aliases"] == []
     assert "tool_git_commit_sha" in run_manifest
@@ -126,17 +133,42 @@ def test_invalid_vendor_errors(tmp_path):
     assert exc_info.value.code == 2
 
 
-def test_sigma_only_pipeline(tmp_path):
-    _, _, run_manifest, _ = _run_dummy(tmp_path, fmc=True, full_mc=False)
+def test_sigma_only_pipeline_runs_fmc_combine_data(tmp_path):
+    _write_hold_fixture(tmp_path / "fmc")
+    output_dir = tmp_path / "results"
+    args = [
+        "--vendor",
+        "cdns",
+        "--process",
+        "n2p",
+        "--process-version",
+        "v1p0",
+        "--corners",
+        "ssgnp_0p450v_m40c",
+        "--types",
+        "hold",
+        "--fmc-golden-dir",
+        str(tmp_path / "fmc"),
+        "--lib-dir",
+        str(tmp_path / "libs"),
+        "--output-dir",
+        str(output_dir),
+    ]
 
+    assert main(args) == 0
+    run_manifest = json.loads((output_dir / "run_manifest.json").read_text(encoding="utf-8"))
     assert run_manifest["enabled_pipelines"] == ["sigma"]
     assert run_manifest["config"]["run_sigma"] is True
     assert run_manifest["config"]["run_moments"] is False
+    assert run_manifest["stage_execution"][0]["stage"] == "fmc_combine_data"
+    assert run_manifest["stage_execution"][0]["status"] == "passed"
+    assert (output_dir / "normalized" / "fmc" / "fmc_result_n2p_v1p0_ssgnp_0p450v_m40c_hold.csv").is_file()
 
 
-def test_moments_only_pipeline(tmp_path):
+def test_moments_only_pipeline_skips_fmc_combine_data(tmp_path):
     _, _, run_manifest, _ = _run_dummy(tmp_path, fmc=False, full_mc=True)
 
     assert run_manifest["enabled_pipelines"] == ["moments"]
     assert run_manifest["config"]["run_sigma"] is False
     assert run_manifest["config"]["run_moments"] is True
+    assert run_manifest["stage_execution"] == []
