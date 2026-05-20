@@ -1,0 +1,265 @@
+****** Advanced Variation Analysis ******
+Copyright (c) 2018 - 2025 by Synopsys, Inc. All Rights Reserved.
+
+This software and the associated documentation are proprietary
+to Synopsys, Inc. This software may only be used in accordance
+with the terms and conditions of a written license agreement with
+Synopsys, Inc. All other use, reproduction, or distribution of
+this software is strictly prohibited.
+
+AVA Version: V-2023.12-SP1, Build time: Fri Mar 01 08:33:39 2024, Application start time: Sat Jul 12 04:45:03 2025
+Hostname: f15p5ax234, Username: enie, PID: 35890
+Working_Directory : /SIM/DFDS_20211231/Personal/ynie/3-LibCharCerti/2025/N2P_v1.0/1-MC_golden/1-Full_MC_golden/ssgnp_0p450v_m40c/combinational_XOR4MDLIMZD4BWP130HPNPN3P48CPD_Z_rise_A2_rise_notA1_notA3_notA4_6-6
+Command_Line_Options : /tools/synopsys/hspice/V-2023.12-SP1/hspice/bin/hspice -o /SIM/DFDS_20211231/Personal/ynie/3-LibCharCerti/2025/N2P_v1.0/1-MC_golden/1-Full_MC_golden/ssgnp_0p450v_m40c/combinational_XOR4MDLIMZD4BWP130HPNPN3P48CPD_Z_rise_A2_rise_notA1_notA3_notA4_6-6/OUT -adv /SIM/DFDS_20211231/Personal/ynie/3-LibCharCerti/2025/N2P_v1.0/1-MC_golden/1-Full_MC_golden/ssgnp_0p450v_m40c/combinational_XOR4MDLIMZD4BWP130HPNPN3P48CPD_Z_rise_A2_rise_notA1_notA3_notA4_6-6/OUT_dm.user.json
+
+This file format and content are subject to change.
+=====================================================
+
+Measure Files:  /SIM/DFDS_20211231/Personal/ynie/3-LibCharCerti/2025/N2P_v1.0/1-MC_golden/1-Full_MC_golden/ssgnp_0p450v_m40c/combinational_XOR4MDLIMZD4BWP130HPNPN3P48CPD_Z_rise_A2_rise_notA1_notA3_notA4_6-6/OUT.mt0(100000,3)
+Sample Files:   /SIM/DFDS_20211231/Personal/ynie/3-LibCharCerti/2025/N2P_v1.0/1-MC_golden/1-Full_MC_golden/ssgnp_0p450v_m40c/combinational_XOR4MDLIMZD4BWP130HPNPN3P48CPD_Z_rise_A2_rise_notA1_notA3_notA4_6-6/OUT.mc0(100000,495)
+
+##Variation_Options
+#------------------
+option ignore_aging_variation = yes
+option ignore_global_variation = no
+option ignore_interconnect_variation = no
+option ignore_local_variation = no
+option ignore_spatial_variation = no
+option ignore_variation = no
+option measform = 1
+option normal_limit = 20.0000
+option output_sigma_value = 1
+option random_generator = mcg
+option replicates = 1
+option sampling_method = sobol
+option screening_method = pearson
+option seed = 1
+option stream = 1
+option use_agauss_format = yes
+
+
+##Summary_Statistics
+#-------------------
+##sampling_method = SRS|LHS|OFAT|Sobol, the index 1 MC sample is nominal value and is excluded in Monte Carlo data mining
+Total number of independent random variables = 495
+Number of independent global random variables = 81
+Number of independent local random variables = 414
+Number of independent aging random variables = 0
+Number of Samples = 100000
+Number of Meas failure = 0
+Number of Device out of bound = 0
+
+
+##Sample_Moments
+#---------------
+#95% Bootstrap confidence intervals for moments are based on 500 re-samples
+                        half_tt_out      meas_delay      meas_tt_out
+Nominal                 8.685775e-10     3.22052e-09     1.737155e-09
+Mean_CI(2.5%)           8.367004e-10     3.454077e-09    1.674012e-09
+Mean                    8.383808e-10     3.458298e-09    1.676762e-09
+Mean_CI(97.5%)          8.401111e-10     3.462099e-09    1.680105e-09
+Median_CI(2.5%)         7.90916e-10      3.369416e-09    1.581858e-09
+Median                  7.927148e-10     3.374343e-09    1.58543e-09
+Median_CI(97.5%)        7.946996e-10     3.378777e-09    1.589257e-09
+StdDev_CI(2.5%)         2.630821e-10     5.986713e-10    5.264347e-10
+StdDev                  2.650656e-10     6.040885e-10    5.301312e-10
+StdDev_CI(97.5%)        2.67151e-10      6.098654e-10    5.339144e-10
+MAD_CI(2.5%)            2.311829e-10     5.345203e-10    4.624748e-10
+MAD                     2.32938e-10      5.389903e-10    4.658759e-10
+MAD_CI(97.5%)           2.348271e-10     5.431194e-10    4.694935e-10
+Skewness_CI(2.5%)       1.211708         1.159671        1.202363
+Skewness                1.25736          1.321961        1.25736
+Skewness_CI(97.5%)      1.315275         1.519363        1.305403
+Kurtosis_CI(2.5%)       5.716623         6.54423         5.655755
+Kurtosis                6.115709         9.438305        6.115709
+Kurtosis_CI(97.5%)      6.652332        13.56236         6.609435
+
+##Quantiles
+#----------
+# Percentile row header example : 'Q99.99683 (     4)' means the 99.99683% percentile which is equivalent to 4 sigma
+# Row with (2.5%) and (97.5%) are lower/upper Confidence Intervals
+# Prefix with < or > indicate the confidence interval value is less or more than this boundary
+                          half_tt_out      meas_delay      meas_tt_out
+Q1e-03      (    2.5%)   <2.771953e-10   <1.923854e-09   <5.543905e-10
+Q1e-03      (  -4.265)    2.804631e-10    1.939465e-09    5.609261e-10
+Q1e-03      (   97.5%)    2.988197e-10    1.985074e-09    5.976394e-10
+Q3.17e-03   (    2.5%)   <2.771953e-10   <1.923854e-09   <5.543905e-10
+Q3.17e-03   (      -4)    2.948954e-10    1.97678e-09     5.897908e-10
+Q3.17e-03   (   97.5%)    3.049314e-10    2.020301e-09    6.098627e-10
+Q1e-02      (    2.5%)    2.98812e-10     1.985056e-09    5.97624e-10
+Q1e-02      (  -3.719)    3.078872e-10    2.05242e-09     6.157743e-10
+Q1e-02      (   97.5%)    3.190467e-10    2.087478e-09    6.380933e-10
+Q1e-01      (    2.5%)    3.436249e-10    2.178986e-09    6.872499e-10
+Q1e-01      (  -3.090)    3.484388e-10    2.192489e-09    6.968777e-10
+Q1e-01      (   97.5%)    3.526382e-10    2.211692e-09    7.052764e-10
+Q1.35e-01   (    2.5%)    3.516893e-10    2.205198e-09    7.033787e-10
+Q1.35e-01   (      -3)    3.5535e-10      2.222171e-09    7.107001e-10
+Q1.35e-01   (   97.5%)    3.600661e-10    2.232878e-09    7.201323e-10
+Q1          (    2.5%)    4.175572e-10    2.411373e-09    8.351143e-10
+Q1          (  -2.326)    4.198796e-10    2.419802e-09    8.397592e-10
+Q1          (   97.5%)    4.222938e-10    2.428504e-09    8.445876e-10
+Q2.28       (    2.5%)    4.537677e-10    2.520676e-09    9.075354e-10
+Q2.28       (      -2)    4.556298e-10    2.526363e-09    9.112595e-10
+Q2.28       (   97.5%)    4.57554e-10     2.532431e-09    9.151081e-10
+Q5          (    2.5%)    4.975096e-10    2.645321e-09    9.950193e-10
+Q5          (  -1.645)    4.989597e-10    2.650191e-09    9.979193e-10
+Q5          (   97.5%)    5.008662e-10    2.654331e-09    1.001732e-09
+Q15.9       (    2.5%)    5.928405e-10    2.896525e-09    1.185681e-09
+Q15.9       (      -1)    5.942949e-10    2.900666e-09    1.18859e-09
+Q15.9       (   97.5%)    5.958138e-10    2.9045e-09      1.191627e-09
+Q25         (    2.5%)    6.493233e-10    3.037107e-09    1.298647e-09
+Q25         (  -0.674)    6.510131e-10    3.041079e-09    1.302026e-09
+Q25         (   97.5%)    6.525838e-10    3.044605e-09    1.305167e-09
+Q75         (    2.5%)    9.707756e-10    3.774987e-09    1.941551e-09
+Q75         (   0.674)    9.732599e-10    3.780066e-09    1.94652e-09
+Q75         (   97.5%)    9.75972e-10     3.785747e-09    1.951944e-09
+Q84.1       (    2.5%)    1.076105e-09    3.996948e-09    2.152209e-09
+Q84.1       (       1)    1.079451e-09    4.004037e-09    2.158903e-09
+Q84.1       (   97.5%)    1.082934e-09    4.010772e-09    2.165869e-09
+Q95         (    2.5%)    1.328488e-09    4.528187e-09    2.656974e-09
+Q95         (   1.645)    1.334682e-09    4.54038e-09     2.669365e-09
+Q95         (   97.5%)    1.340463e-09    4.551473e-09    2.680927e-09
+Q97.72      (    2.5%)    1.495018e-09    4.876956e-09    2.990036e-09
+Q97.72      (       2)    1.503571e-09    4.896515e-09    3.007142e-09
+Q97.72      (   97.5%)    1.511903e-09    4.915373e-09    3.023806e-09
+Q99         (    2.5%)    1.667179e-09    5.259045e-09    3.334358e-09
+Q99         (   2.326)    1.678315e-09    5.290802e-09    3.35663e-09
+Q99         (   97.5%)    1.694404e-09    5.322563e-09    3.388808e-09
+Q99.865     (    2.5%)    2.086351e-09    6.356435e-09    4.172703e-09
+Q99.865     (       3)    2.123859e-09    6.502914e-09    4.247718e-09
+Q99.865     (   97.5%)    2.161255e-09    6.671478e-09    4.322508e-09
+Q99.9       (    2.5%)    2.150717e-09    6.603255e-09    4.301433e-09
+Q99.9       (   3.090)    2.191383e-09    6.779759e-09    4.382767e-09
+Q99.9       (   97.5%)    2.251658e-09    6.968612e-09    4.503315e-09
+Q99.99      (    2.5%)    2.704813e-09    8.247912e-09    5.409625e-09
+Q99.99      (   3.719)    2.830637e-09    8.532261e-09    5.661274e-09
+Q99.99      (   97.5%)    3.053109e-09    1.006883e-08    6.106219e-09
+Q99.99683   (    2.5%)    2.867829e-09    8.712338e-09    5.735658e-09
+Q99.99683   (       4)    3.097145e-09    1.088868e-08    6.194291e-09
+Q99.99683   (   97.5%)   >3.863516e-09   >1.581932e-08   >7.727032e-09
+Q99.999     (    2.5%)    3.052745e-09    1.006527e-08    6.10549e-09
+Q99.999     (   4.265)    3.700099e-09    1.444086e-08    7.400197e-09
+Q99.999     (   97.5%)   >3.863516e-09   >1.581932e-08   >7.727032e-09
+
+##Response_Correlation_Matrix
+#----------------------------
+                        half_tt_out     meas_delay      meas_tt_out
+half_tt_out             1.000000        0.543693        1.000000
+meas_delay              0.543693        1.000000        0.543693
+meas_tt_out             1.000000        0.543693        1.000000
+
+##Extremes_and_Corners
+#---------------------
+                        min             max             minIndex   maxIndex
+half_tt_out             2.771953e-10    3.863516e-09    32361      73685
+meas_delay              1.923854e-09    1.581932e-08    88627      64458
+meas_tt_out             5.543905e-10    7.727032e-09    32361      73685
+
+##Selective_Simulation
+#---------------------
+#To simulate corners only:
+Use: ... Monte = list(32361, 64458, 73685, 88627)
+
+
+
+##Variables_Screened_by_Importance
+#---------------------------------
+Method: Pearson Correlation
+#Print threshold: 95%
+#(elements with EquivVar smaller than 0.05% will not be printed.)
+#(parameters with ParVar smaller than 0.01% will not be printed.)
+
+Response: half_tt_out
+Global Variation =  3.338e-12,  Local Variation =  2.650e-10
+    Element             Model EquivVar CumVar MatchGrp        Par    ID    Corr   ParVar
+x1.xm23_1 pch_svt_mac.3   24.83% 24.83%              .
+       .         .              .       .            .         parl1 ILNC   0.45  23.34%
+       .         .              .       .            .         parl2 ILNC  -0.08   0.74%
+       .         .              .       .            .     plo_dtfin ILNC  -0.08   0.70%
+       .         .              .       .            .     plo_dhfin ILNC  -0.02   0.04%
+x1.xm23_2 pch_svt_mac.3   24.82% 49.65%              .
+       .         .              .       .            .         parl1 ILNC   0.45  23.35%
+       .         .              .       .            .         parl2 ILNC  -0.08   0.75%
+       .         .              .       .            .     plo_dtfin ILNC  -0.08   0.69%
+       .         .              .       .            .     plo_dhfin ILNC  -0.02   0.04%
+x1.xm23_3 pch_svt_mac.3   24.75% 74.40%              .
+       .         .              .       .            .         parl1 ILNC   0.45  23.29%
+       .         .              .       .            .         parl2 ILNC  -0.08   0.74%
+       .         .              .       .            .     plo_dtfin ILNC  -0.08   0.69%
+       .         .              .       .            .     plo_dhfin ILNC  -0.02   0.04%
+x1.xm23_4 pch_svt_mac.3   24.73% 99.13%              .
+       .         .              .       .            .         parl1 ILNC   0.45  23.27%
+       .         .              .       .            .         parl2 ILNC  -0.08   0.73%
+       .         .              .       .            .     plo_dtfin ILNC  -0.08   0.69%
+       .         .              .       .            .     plo_dhfin ILNC  -0.02   0.04%
+
+Response: meas_delay
+Global Variation =  6.222e-12,  Local Variation =  6.041e-10
+    Element             Model EquivVar CumVar MatchGrp        Par    ID    Corr   ParVar
+x1.xm0 nch_svt_mac.3      27.93% 27.93%              .
+       .         .              .       .            .         parl1 ILNC   0.46  26.53%
+       .         .              .       .            .     plo_dtfin ILNC  -0.08   0.71%
+       .         .              .       .            .         parl2 ILNC  -0.06   0.41%
+       .         .              .       .            .       plo_dxl ILNC   0.04   0.25%
+       .         .              .       .            .     plo_dhfin ILNC  -0.01   0.02%
+x1.xm7 nch_svt_mac.3      19.92% 47.84%              .
+       .         .              .       .            .         parl1 ILNC   0.39  18.85%
+       .         .              .       .            .     plo_dtfin ILNC  -0.06   0.45%
+       .         .              .       .            .         parl2 ILNC  -0.06   0.39%
+       .         .              .       .            .       plo_dxl ILNC   0.04   0.20%
+       .         .              .       .            .     plo_dhfin ILNC  -0.01   0.02%
+x1.xm2 pch_svt_mac.3      15.52% 63.37%              .
+       .         .              .       .            .         parl1 ILNC   0.34  14.69%
+       .         .              .       .            .         parl2 ILNC  -0.06   0.48%
+       .         .              .       .            .     plo_dtfin ILNC  -0.05   0.35%
+x1.xm23_2 pch_svt_mac.3    6.88% 70.25%              .
+       .         .              .       .            .         parl1 ILNC   0.23   6.45%
+       .         .              .       .            .     plo_dtfin ILNC  -0.04   0.23%
+       .         .              .       .            .         parl2 ILNC  -0.04   0.19%
+x1.xm23_1 pch_svt_mac.3    6.82% 77.07%              .
+       .         .              .       .            .         parl1 ILNC   0.22   6.39%
+       .         .              .       .            .     plo_dtfin ILNC  -0.04   0.23%
+       .         .              .       .            .         parl2 ILNC  -0.04   0.18%
+       .         .              .       .            .     plo_dhfin ILNC  -0.01   0.01%
+x1.xm23_3 pch_svt_mac.3    6.81% 83.88%              .
+       .         .              .       .            .         parl1 ILNC   0.22   6.38%
+       .         .              .       .            .     plo_dtfin ILNC  -0.04   0.22%
+       .         .              .       .            .         parl2 ILNC  -0.04   0.20%
+       .         .              .       .            .     plo_dhfin ILNC  -0.01   0.01%
+x1.xm23_4 pch_svt_mac.3    6.75% 90.63%              .
+       .         .              .       .            .         parl1 ILNC   0.22   6.32%
+       .         .              .       .            .     plo_dtfin ILNC  -0.04   0.22%
+       .         .              .       .            .         parl2 ILNC  -0.04   0.18%
+       .         .              .       .            .     plo_dhfin ILNC  -0.01   0.02%
+x1.xm4 pch_svt_mac.3       5.90% 96.53%              .
+       .         .              .       .            .         parl1 ILNC   0.21   5.61%
+       .         .              .       .            .         parl2 ILNC  -0.04   0.16%
+       .         .              .       .            .     plo_dtfin ILNC  -0.03   0.14%
+
+Response: meas_tt_out
+Global Variation =  6.675e-12,  Local Variation =  5.301e-10
+    Element             Model EquivVar CumVar MatchGrp        Par    ID    Corr   ParVar
+x1.xm23_1 pch_svt_mac.3   24.83% 24.83%              .
+       .         .              .       .            .         parl1 ILNC   0.45  23.34%
+       .         .              .       .            .         parl2 ILNC  -0.08   0.74%
+       .         .              .       .            .     plo_dtfin ILNC  -0.08   0.70%
+       .         .              .       .            .     plo_dhfin ILNC  -0.02   0.04%
+x1.xm23_2 pch_svt_mac.3   24.82% 49.65%              .
+       .         .              .       .            .         parl1 ILNC   0.45  23.35%
+       .         .              .       .            .         parl2 ILNC  -0.08   0.75%
+       .         .              .       .            .     plo_dtfin ILNC  -0.08   0.69%
+       .         .              .       .            .     plo_dhfin ILNC  -0.02   0.04%
+x1.xm23_3 pch_svt_mac.3   24.75% 74.40%              .
+       .         .              .       .            .         parl1 ILNC   0.45  23.29%
+       .         .              .       .            .         parl2 ILNC  -0.08   0.74%
+       .         .              .       .            .     plo_dtfin ILNC  -0.08   0.69%
+       .         .              .       .            .     plo_dhfin ILNC  -0.02   0.04%
+x1.xm23_4 pch_svt_mac.3   24.73% 99.13%              .
+       .         .              .       .            .         parl1 ILNC   0.45  23.27%
+       .         .              .       .            .         parl2 ILNC  -0.08   0.73%
+       .         .              .       .            .     plo_dtfin ILNC  -0.08   0.69%
+       .         .              .       .            .     plo_dhfin ILNC  -0.02   0.04%
+
+##Important_Elements_or_Models
+#-----------------------------
+x1.xm23_1, x1.xm23_2, x1.xm23_3, x1.xm23_4, x1.xm0, x1.xm7, x1.xm2, x1.xm4

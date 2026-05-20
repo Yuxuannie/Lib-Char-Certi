@@ -1,0 +1,48 @@
+/SIM/DFDS_20211231/Personal/ynie/3-LibCharCerti/2025/N2P_v1.0/2-select_2nd_round/2-Full_MC_golden/
+
+.
+├── 0-script
+│   ├── 0-run_MC
+│   │   ├── copy_mc_files.py
+│   │   ├── copy_mc_files.sh
+│   │   ├── run_all_mc.sh
+│   │   ├── run_parallel_20250827_001325.log
+│   │   ├── run_parallel_20250828_041004.log
+│   │   ├── run_parallel_20250828_041047.log
+│   │   ├── run_parallel_20250829_022936.log
+│   │   └── run_parallel_20250829_104424.log
+│   ├── 1-Parse
+│   │   ├── parse_mc_data.log
+│   │   ├── parse_mc_data.py
+│   │   ├── parse_mc_data.sh
+│   │   ├── validate_parsed_data.sh
+│   │   └── validation_report.txt
+│   ├── 2-monitor
+│   │   ├── check_csv_cross_corner.sh
+│   │   ├── check_csv.sh
+│   │   ├── cross_corner_csv_check.log
+│   │   └── summary_csv_report_full_mc.log
+│   ├── 3-remove_arcs
+│   │   ├── arc_cleanup.py
+│   │   ├── common_arcs_list.txt
+│   │   └── run_clean_up.sh
+│   └── 4-data_process
+│       ├── mc_golden_parse.log
+│       ├── parse_mc_golden.py
+│       └── parse_mc_golden.sh
+└── Parse
+    └── ssgnp_0p450v_m40c
+        ├── combinational_AOI222M1LIMZD4BWP130HPNPN3P48CPD_ZN_fall_B1_rise_A1_notA2_B2_notC1_C2_3-5
+        ├── combinational_AOI222M1LIMZD4BWP130HPNPN3P48CPD_ZN_fall_B1_rise_A1_notA2_B2_notC1_C2_4-4
+        ├── combinational_AOI222M1LIMZD4BWP130HPNPN3P48CPD_ZN_fall_B1_rise_A1_notA2_B2_notC1_C2_5-5
+        ├── combinational_AOI222M1LIMZD4BWP130HPNPN3P48CPD_ZN_fall_B1_rise_A1_notA2_B2_notC1_C2_6-4
+        ├── combinational_AOI222M1LIMZD4BWP130HPNPN3P48CPD_ZN_fall_B1_rise_A1_notA2_B2_notC1_C2_6-6
+        ├── combinational_AOI222M1LIMZD4BWP130HPNPN3P48CPD_ZN_rise_B1_fall_A1_notA2_B2_notC1_C2_3-5
+        ├── combinational_AOI222M1LIMZD4BWP130HPNPN3P48CPD_ZN_rise_B1_fall_A1_notA2_B2_notC1_C2_4-4
+        ├── combinational_AOI222M1LIMZD4BWP130HPNPN3P48CPD_ZN_rise_B1_fall_A1_notA2_B2_notC1_C2_5-5
+        ├── combinational_AOI222M1LIMZD4BWP130HPNPN3P48CPD_ZN_rise_B1_fall_A1_notA2_B2_notC1_C2_6-4
+        ├── combinational_AOI222M1LIMZD4BWP130HPNPN3P48CPD_ZN_rise_B1_fall_A1_notA2_B2_notC1_C2_6-6
+        ├── combinational_AOI222M1LIMZD8BWP130HPNPN3P48CPD_ZN_fall_A1_rise_A2_B1_notB2_C1_notC2_3-5
+        ├── combinational_AOI222M1LIMZD8BWP130HPNPN3P48CPD_ZN_fall_A1_rise_A2_B1_notB2_C1_notC2_4-4
+        ├── combinational_AOI222M1LIMZD8BWP130HPNPN3P48CPD_ZN_fall_A1_rise_A2_B1_notB2_C1_notC2_5-5
+        └── combinational_AOI222M1LIMZD8BWP130HPNPN3P48CPD_ZN_fall_A1_rise_A2_B1_notB2_C1_notC2_6-4
