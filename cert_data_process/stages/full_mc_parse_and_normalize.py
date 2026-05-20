@@ -11,7 +11,11 @@ from typing import Any
 
 from cert_data_process.config import CertDataProcessConfig
 from cert_data_process.parsers.arc_dir_name import parse_arc_info
-from cert_data_process.parsers.full_mc_report import parse_mc_sim_params, parse_sample_moments
+from cert_data_process.parsers.full_mc_report import (
+    parse_mc_sim_params,
+    parse_sample_moments,
+    parse_sample_moments_legacy_rows,
+)
 from cert_data_process.stages.fmc_combine_data import DELAY_SLEW_HEADER
 
 
@@ -42,6 +46,14 @@ def _write_csv(path: Path, rows: list[list[Any]]) -> None:
             w.writerow(row)
 
 
+def _write_legacy_rows(path: Path, rows: list[list[str]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f)
+        for row in rows:
+            w.writerow(row)
+
+
 def _type_from_arc(arc_name: str) -> str | None:
     if arc_name.startswith(("combinational_", "edge_")):
         # Full MC moments source only contains delay/slew meas columns.
@@ -59,6 +71,9 @@ def run_full_mc_parse_and_normalize(config: CertDataProcessConfig) -> FullMcNorm
     assert root is not None
 
     # corner and type are sourced from directory names per user lock-down.
+    layer_a_count = 0
+    layer_b_count = 0
+
     for corner in config.corners:
         corner_dir = root / corner
         rows_delay: list[list[Any]] = []
@@ -116,6 +131,7 @@ def run_full_mc_parse_and_normalize(config: CertDataProcessConfig) -> FullMcNorm
             arc_info = parse_arc_info(arc_name)
             params = parse_mc_sim_params(mc_sim)
             moments = parse_sample_moments(report)
+            legacy_rows = parse_sample_moments_legacy_rows(report)
             if not moments or "Nominal" not in moments:
                 arc_fail += 1
                 failures.append(
@@ -178,6 +194,9 @@ def run_full_mc_parse_and_normalize(config: CertDataProcessConfig) -> FullMcNorm
             # debug artifacts
             debug_dir = config.output_dir / "debug" / "full_mc" / arc_name
             debug_dir.mkdir(parents=True, exist_ok=True)
+            if legacy_rows:
+                _write_legacy_rows(debug_dir / "stats_legacy_shape.csv", legacy_rows)
+                layer_a_count += 1
             (debug_dir / "netlist_params.txt").write_text(
                 f"corner={corner}\narc={arc_name}\ncl={params.get('cl')}\nrel_pin_slew={params.get('rel_pin_slew')}\n",
                 encoding="utf-8",
@@ -189,8 +208,10 @@ def run_full_mc_parse_and_normalize(config: CertDataProcessConfig) -> FullMcNorm
         slew_out = config.output_dir / "normalized" / "full_mc" / f"fmc_result_{node}_{corner}_slew.csv"
         if rows_delay:
             _write_csv(delay_out, rows_delay)
+            layer_b_count += 1
         if rows_slew:
             _write_csv(slew_out, rows_slew)
+            layer_b_count += 1
 
         processed.append(
             {
@@ -216,6 +237,8 @@ def run_full_mc_parse_and_normalize(config: CertDataProcessConfig) -> FullMcNorm
         "requested_types": list(config.types),
         "processed": processed,
         "failures": failures,
+        "layer_a_artifacts_count": layer_a_count,
+        "layer_b_artifacts_count": layer_b_count,
     }
     compatibility_stage_report = {
         "stage": "full_mc_parse_and_normalize",

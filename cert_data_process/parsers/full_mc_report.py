@@ -71,3 +71,41 @@ def parse_sample_moments(report_path: Path) -> dict[str, dict[str, float]]:
             continue
         data[metric] = {"meas_delay": delay_v, "meas_tt_out": slew_v}
     return data
+
+
+def parse_sample_moments_legacy_rows(report_path: Path) -> list[list[str]]:
+    """Return legacy-like rows for Layer A validation.
+
+    Shape mirrors legacy `1-Parse/parse_mc_data.py` CSV output: first column is
+    metric label, followed by `half_tt_out`, `meas_delay`, `meas_tt_out`.
+    """
+
+    lines = _extract_sample_moments_block(report_path)
+    if not lines:
+        return []
+
+    header_idx = None
+    header_cols: list[str] = []
+    for i, line in enumerate(lines):
+        cols = [c for c in re.split(r"\s+", line.strip()) if c]
+        if {"half_tt_out", "meas_delay", "meas_tt_out"}.issubset(set(cols)):
+            header_idx = i
+            header_cols = cols
+            break
+    if header_idx is None:
+        return []
+
+    idx_half = header_cols.index("half_tt_out")
+    idx_delay = header_cols.index("meas_delay")
+    idx_slew = header_cols.index("meas_tt_out")
+
+    rows: list[list[str]] = [["", "half_tt_out", "meas_delay", "meas_tt_out"]]
+    for line in lines[header_idx + 1 :]:
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        cols = [c for c in re.split(r"\s+", s) if c]
+        if len(cols) <= max(idx_half, idx_delay, idx_slew):
+            continue
+        rows.append([cols[0], cols[idx_half], cols[idx_delay], cols[idx_slew]])
+    return rows

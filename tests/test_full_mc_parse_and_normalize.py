@@ -60,6 +60,13 @@ Skewness 0.0 0.7 0.8
     assert delay_csv.is_file()
     assert slew_csv.is_file()
 
+    layer_a_csv = output_dir / "debug" / "full_mc" / "combinational_TESTCELL_Z_rise_A_rise_NO_CONDITION_1_1" / "stats_legacy_shape.csv"
+    assert layer_a_csv.is_file()
+    text = layer_a_csv.read_text(encoding="utf-8")
+    assert "half_tt_out,meas_delay,meas_tt_out" in text
+
     manifest = json.loads((output_dir / "run_manifest.json").read_text(encoding="utf-8"))
     assert manifest["enabled_pipelines"] == ["moments"]
     assert manifest["stage_execution"][0]["stage"] == "full_mc_parse_and_normalize"
+    assert manifest["stage_execution"][0]["layer_a_artifacts_count"] == 1
+    assert manifest["stage_execution"][0]["layer_b_artifacts_count"] == 2
