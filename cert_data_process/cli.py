@@ -17,6 +17,7 @@ from typing import Iterable, Optional
 from . import __version__
 from .config import SUPPORTED_TYPES, SUPPORTED_VENDORS, build_config, parse_csv
 from .stages.fmc_combine_data import run_fmc_combine_data
+from .stages.full_mc_parse_and_normalize import run_full_mc_parse_and_normalize
 
 OUTPUT_DIRECTORIES = (
     "logs",
@@ -232,6 +233,12 @@ def run(argv: Optional[Iterable[str]] = None) -> int:
         stage_execution.append(fmc_result.stage_execution)
         compatibility_stage_reports.append(fmc_result.compatibility_stage_report)
         failed = failed or fmc_result.failed
+
+    if config.run_moments:
+        full_mc_result = run_full_mc_parse_and_normalize(config)
+        stage_execution.append(full_mc_result.stage_execution)
+        compatibility_stage_reports.append(full_mc_result.compatibility_stage_report)
+        failed = failed or full_mc_result.failed
 
     write_manifests(config, stage_execution, compatibility_stage_reports)
     print(f"Initialized cert_data_process output tree at: {config.output_dir}")
