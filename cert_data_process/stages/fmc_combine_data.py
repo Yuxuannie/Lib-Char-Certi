@@ -100,6 +100,29 @@ def _decks_dir(config: CertDataProcessConfig, corner: str, type_info: str) -> Pa
     return _corner_dir(config, corner) / type_info / "DECKS"
 
 
+def _resolve_decks_dir(config: CertDataProcessConfig, corner: str, type_info: str) -> tuple[Path, Optional[str]]:
+    """Resolve DECKS directory with legacy-compatible slew fallback.
+
+    In many legacy FMC drops, delay and slew are produced from the same DECKS
+    tree under ``delay/DECKS`` (one fastmontecarlo.log contains both
+    ``meas_delay`` and ``meas_tt_out`` sections). When requested ``slew/DECKS``
+    is missing but ``delay/DECKS`` exists, reuse ``delay/DECKS`` for slew.
+    """
+
+    requested = _decks_dir(config, corner, type_info)
+    if type_info != "slew":
+        return requested, None
+
+    if requested.is_dir():
+        return requested, None
+
+    delay_decks = _decks_dir(config, corner, "delay")
+    if delay_decks.is_dir():
+        return delay_decks, "slew_reused_delay_decks"
+
+    return requested, None
+
+
 def _output_csv(config: CertDataProcessConfig, corner: str, type_info: str) -> Path:
     return config.output_dir / "normalized" / "fmc" / f"fmc_result_{_node(config)}_{corner}_{type_info}.csv"
 
@@ -150,7 +173,7 @@ def run_fmc_combine_data(config: CertDataProcessConfig) -> FmcCombineDataResult:
 
     for corner in config.corners:
         for type_info in config.types:
-            decks_dir = _decks_dir(config, corner, type_info)
+            decks_dir, decks_resolution_note = _resolve_decks_dir(config, corner, type_info)
             output_csv = _output_csv(config, corner, type_info)
             pair_failures: list[dict[str, Any]] = []
             rows: list[list[Any]] = []
@@ -216,6 +239,7 @@ def run_fmc_combine_data(config: CertDataProcessConfig) -> FmcCombineDataResult:
                 "corner": corner,
                 "type": type_info,
                 "input_dir": str(decks_dir),
+                "input_dir_resolution": decks_resolution_note or "requested_type_decks",
                 "output_csv": str(output_csv),
                 "arc_count_total": arc_count_total,
                 "arc_count_processed": len(rows),
@@ -226,6 +250,7 @@ def run_fmc_combine_data(config: CertDataProcessConfig) -> FmcCombineDataResult:
                 [
                     f"[{corner} {type_info}]",
                     f"input_dir={decks_dir}",
+                    f"input_dir_resolution={processed_entry['input_dir_resolution']}",
                     f"output_csv={output_csv}",
                     f"arc_count_total={arc_count_total}",
                     f"arc_count_processed={len(rows)}",
