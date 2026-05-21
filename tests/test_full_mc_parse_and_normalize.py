@@ -57,8 +57,12 @@ Skewness 0.0 0.7 0.8
     assert exit_code == 0
     delay_csv = output_dir / "normalized" / "full_mc" / "fmc_result_n2p_v1p0_ssgnp_0p450v_m40c_delay.csv"
     slew_csv = output_dir / "normalized" / "full_mc" / "fmc_result_n2p_v1p0_ssgnp_0p450v_m40c_slew.csv"
+    mc_delay_csv = output_dir / "normalized" / "full_mc" / "MC_n2p_v1p0_ssgnp_0p450v_m40c_delay.csv"
+    mc_slew_csv = output_dir / "normalized" / "full_mc" / "MC_n2p_v1p0_ssgnp_0p450v_m40c_slew.csv"
     assert delay_csv.is_file()
     assert slew_csv.is_file()
+    assert mc_delay_csv.is_file()
+    assert mc_slew_csv.is_file()
 
     layer_a_csv = output_dir / "debug" / "full_mc" / "combinational_TESTCELL_Z_rise_A_rise_NO_CONDITION_1_1" / "stats_legacy_shape.csv"
     assert layer_a_csv.is_file()
@@ -70,3 +74,4 @@ Skewness 0.0 0.7 0.8
     assert manifest["stage_execution"][0]["stage"] == "full_mc_parse_and_normalize"
     assert manifest["stage_execution"][0]["layer_a_artifacts_count"] == 1
     assert manifest["stage_execution"][0]["layer_b_artifacts_count"] == 2
+    assert manifest["stage_execution"][0]["mc_golden_artifacts_count"] == 2
