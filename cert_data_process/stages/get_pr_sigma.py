@@ -48,15 +48,6 @@ def run_build_pr_table(config: CertDataProcessConfig) -> PrTableResult:
     logs_dir = config.output_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
     run_log = logs_dir / "build_pr_table.log"
-    log_lines = [
-        "stage=build_pr_table",
-        f"started_at_utc={started_at}",
-        f"root_path={root_path}",
-        f"requested_corners={','.join(config.corners)}",
-        f"requested_types={','.join([t for t in config.types if t in {'delay','slew','hold'}])}",
-        f"cmd={' '.join(cmd)}",
-        "",
-    ]
 
     if not root_path.is_dir():
         stage = {
@@ -75,8 +66,6 @@ def run_build_pr_table(config: CertDataProcessConfig) -> PrTableResult:
                 }
             ],
         }
-        log_lines.append("result=skipped reason=missing_sigma_combined_dir")
-        run_log.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
         return PrTableResult(stage, {"stage": "build_pr_table", "status": "not_evaluated", "reason": "No sigma combined inputs found; stage skipped."})
 
 
@@ -94,8 +83,6 @@ def run_build_pr_table(config: CertDataProcessConfig) -> PrTableResult:
             "failures": [],
             "reason": "no_sigma_rpt_inputs",
         }
-        log_lines.append("result=skipped reason=no_sigma_rpt_inputs")
-        run_log.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
         return PrTableResult(stage, {"stage": "build_pr_table", "status": "not_evaluated", "reason": "No sigma RPT files found; stage skipped."})
     proc = subprocess.run(cmd, capture_output=True, text=True)
     log_lines.extend(

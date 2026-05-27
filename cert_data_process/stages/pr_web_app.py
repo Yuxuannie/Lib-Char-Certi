@@ -25,13 +25,11 @@ def run_generate_pr_web_app(config: CertDataProcessConfig, stage_execution: list
     index = web_dir / "index.html"
     rows = []
     for st in stage_execution:
-        rows.append(
-            f"<tr><td>{st.get('stage','')}</td><td>{st.get('status','')}</td><td>{st.get('pipeline','')}</td><td>{st.get('reason','')}</td></tr>"
-        )
+        rows.append(f"<tr><td>{st.get('stage','')}</td><td>{st.get('status','')}</td><td>{st.get('pipeline','')}</td></tr>")
     html = f"""<!doctype html><html><head><meta charset='utf-8'><title>cert_data_process run</title></head>
 <body><h1>cert_data_process run dashboard</h1>
 <p>output_dir: {config.output_dir}</p>
-<table border='1' cellspacing='0' cellpadding='6'><tr><th>stage</th><th>status</th><th>pipeline</th><th>reason</th></tr>{''.join(rows)}</table>
+<table border='1' cellspacing='0' cellpadding='6'><tr><th>stage</th><th>status</th><th>pipeline</th></tr>{''.join(rows)}</table>
 <p>PR table candidates under: combined/sigma/</p>
 </body></html>"""
     index.write_text(html, encoding='utf-8')
