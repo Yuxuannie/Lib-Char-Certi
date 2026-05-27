@@ -19,6 +19,7 @@ from .config import SUPPORTED_TYPES, SUPPORTED_VENDORS, build_config, parse_csv
 from .stages.fmc_combine_data import run_fmc_combine_data
 from .stages.full_mc_parse_and_normalize import run_full_mc_parse_and_normalize
 from .stages.get_pr_sigma import run_get_pr_sigma
+from .stages.lib_join_sigma import run_lib_join_sigma
 
 OUTPUT_DIRECTORIES = (
     "logs",
@@ -49,7 +50,7 @@ PLANNED_STAGE_STATUS = (
     {
         "stage": "lib_join",
         "pipeline": "sigma,moments",
-        "implemented": False,
+        "implemented": True,
         "planned_pr": "PR 4",
         "note": "Unified lib lookup core with sigma + moments output formatters",
     },
@@ -252,6 +253,12 @@ def run(argv: Optional[Iterable[str]] = None) -> int:
             "status": "skipped",
             "reason": "deferred_by_user_focus_on_fmc",
         })
+
+    if config.run_sigma:
+        lib_join_result = run_lib_join_sigma(config)
+        stage_execution.append(lib_join_result.stage_execution)
+        compatibility_stage_reports.append(lib_join_result.compatibility_stage_report)
+        failed = failed or lib_join_result.failed
 
     if config.run_sigma:
         sigma_pr_result = run_get_pr_sigma(config)

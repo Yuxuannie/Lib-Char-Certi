@@ -91,7 +91,7 @@ def test_planned_stage_status_uses_unified_lib_join():
         {
             "stage": "lib_join",
             "pipeline": "sigma,moments",
-            "implemented": False,
+            "implemented": True,
             "planned_pr": "PR 4",
             "note": "Unified lib lookup core with sigma + moments output formatters",
         }
