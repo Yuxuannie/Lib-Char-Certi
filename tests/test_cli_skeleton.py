@@ -24,7 +24,7 @@ def _base_args(tmp_path, output_dir, *, types="delay,slew,hold,mpw"):
     ]
 
 
-def _run_dummy(tmp_path, *, fmc=False, full_mc=True, extra_args=None, types="delay,slew,hold,mpw"):
+def _run_dummy(tmp_path, *, fmc=False, full_mc=True, enable_full_mc=False, extra_args=None, types="delay,slew,hold,mpw"):
     output_dir = tmp_path / "results"
     args = _base_args(tmp_path, output_dir, types=types)
     if fmc:
@@ -34,6 +34,8 @@ def _run_dummy(tmp_path, *, fmc=False, full_mc=True, extra_args=None, types="del
         for corner in ("ssgnp_0p450v_m40c", "ssgnp_0p465v_m40c"):
             (full_mc_root / corner).mkdir(parents=True, exist_ok=True)
         args.extend(["--full-mc-golden-dir", str(full_mc_root)])
+    if enable_full_mc:
+        args.append("--enable-full-mc")
     if extra_args:
         args.extend(extra_args)
 
@@ -168,11 +170,11 @@ def test_sigma_only_pipeline_runs_fmc_combine_data(tmp_path):
     assert (output_dir / "normalized" / "fmc" / "fmc_result_n2p_v1p0_ssgnp_0p450v_m40c_hold.csv").is_file()
 
 
-def test_moments_only_pipeline_runs_full_mc_stage(tmp_path):
-    _, _, run_manifest, _ = _run_dummy(tmp_path, fmc=False, full_mc=True)
+def test_moments_only_pipeline_deferred_full_mc_by_default(tmp_path):
+    _, _, run_manifest, _ = _run_dummy(tmp_path, fmc=False, full_mc=True, enable_full_mc=False)
 
     assert run_manifest["enabled_pipelines"] == ["moments"]
     assert run_manifest["config"]["run_sigma"] is False
     assert run_manifest["config"]["run_moments"] is True
     assert run_manifest["stage_execution"][0]["stage"] == "full_mc_parse_and_normalize"
-    assert run_manifest["stage_execution"][0]["status"] == "passed"
+    assert run_manifest["stage_execution"][0]["status"] == "skipped"

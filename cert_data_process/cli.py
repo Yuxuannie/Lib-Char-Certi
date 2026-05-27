@@ -18,6 +18,7 @@ from . import __version__
 from .config import SUPPORTED_TYPES, SUPPORTED_VENDORS, build_config, parse_csv
 from .stages.fmc_combine_data import run_fmc_combine_data
 from .stages.full_mc_parse_and_normalize import run_full_mc_parse_and_normalize
+from .stages.get_pr_sigma import run_get_pr_sigma
 
 OUTPUT_DIRECTORIES = (
     "logs",
@@ -132,6 +133,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Phase 2/3 option placeholder: keep raw Full MC samples in addition to summary and histogram bins.",
     )
+    parser.add_argument(
+        "--enable-full-mc",
+        action="store_true",
+        help="Run Full MC pipeline now. By default it is deferred while FMC flow is prioritized.",
+    )
     return parser
 
 
@@ -234,11 +240,24 @@ def run(argv: Optional[Iterable[str]] = None) -> int:
         compatibility_stage_reports.append(fmc_result.compatibility_stage_report)
         failed = failed or fmc_result.failed
 
-    if config.run_moments:
+    if config.run_moments and args.enable_full_mc:
         full_mc_result = run_full_mc_parse_and_normalize(config)
         stage_execution.append(full_mc_result.stage_execution)
         compatibility_stage_reports.append(full_mc_result.compatibility_stage_report)
         failed = failed or full_mc_result.failed
+    elif config.run_moments and not args.enable_full_mc:
+        stage_execution.append({
+            "stage": "full_mc_parse_and_normalize",
+            "pipeline": "moments",
+            "status": "skipped",
+            "reason": "deferred_by_user_focus_on_fmc",
+        })
+
+    if config.run_sigma:
+        sigma_pr_result = run_get_pr_sigma(config)
+        stage_execution.append(sigma_pr_result.stage_execution)
+        compatibility_stage_reports.append(sigma_pr_result.compatibility_stage_report)
+        failed = failed or sigma_pr_result.failed
 
     write_manifests(config, stage_execution, compatibility_stage_reports)
     print(f"Initialized cert_data_process output tree at: {config.output_dir}")

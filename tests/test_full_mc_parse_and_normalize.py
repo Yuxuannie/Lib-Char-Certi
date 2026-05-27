@@ -51,6 +51,7 @@ Skewness 0.0 0.7 0.8
             str(tmp_path / "libs"),
             "--output-dir",
             str(output_dir),
+            "--enable-full-mc",
         ]
     )
 
