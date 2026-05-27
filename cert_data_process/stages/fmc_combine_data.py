@@ -159,6 +159,8 @@ def run_fmc_combine_data(config: CertDataProcessConfig) -> FmcCombineDataResult:
 
     started_at = _utc_now()
     started = time.monotonic()
+    workers = max(1, min(32, (os.cpu_count() or 1)))
+    print(f"[fmc_combine_data] workers={workers} (threaded arc parsing)")
     processed: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
     log_lines = [
@@ -167,7 +169,7 @@ def run_fmc_combine_data(config: CertDataProcessConfig) -> FmcCombineDataResult:
         f"fmc_golden_dir={config.fmc_golden_dir}",
         f"requested_corners={','.join(config.corners)}",
         f"requested_types={','.join(config.types)}",
-        f"workers={max(1, min(32, (os.cpu_count() or 1)))}",
+        f"workers={workers}",
         "",
     ]
 
@@ -216,7 +218,6 @@ def run_fmc_combine_data(config: CertDataProcessConfig) -> FmcCombineDataResult:
                             "detail": "No arc directories matched legacy FMC arc prefixes",
                         }
                     )
-                workers = max(1, min(32, (os.cpu_count() or 1)))
                 payloads = [(decks_dir / arc_dir_name, arc_dir_name, type_info) for arc_dir_name in arc_dirs]
                 if workers == 1 or len(payloads) < 2:
                     parsed = [_parse_arc_worker(payload) for payload in payloads]
@@ -261,7 +262,12 @@ def run_fmc_combine_data(config: CertDataProcessConfig) -> FmcCombineDataResult:
                 log_lines.append(f"failure={failure}")
             log_lines.append("")
 
-    status = "failed" if failures else "passed"
+    if processed and failures and len(failures) < len(processed):
+        status = "partial"
+    elif failures:
+        status = "failed"
+    else:
+        status = "passed"
     ended_at = _utc_now()
     stage_execution = {
         "stage": "fmc_combine_data",
@@ -280,6 +286,20 @@ def run_fmc_combine_data(config: CertDataProcessConfig) -> FmcCombineDataResult:
         "status": "not_evaluated",
         "reason": "Compatibility fixture comparison runs in tests; CLI does not accept expected fixture paths in PR 2.",
     }
+    log_lines.extend(
+        [
+            "summary:",
+            f"status={status}",
+            f"processed_pairs={len(processed)}",
+            f"failure_count={len(failures)}",
+        ]
+    )
+    if failures:
+        log_lines.append("failure_reasons:")
+        for failure in failures:
+            log_lines.append(
+                f"  - corner={failure.get('corner')} type={failure.get('type')} reason={failure.get('reason')} detail={failure.get('detail','')}"
+            )
 
     log_path = config.output_dir / "logs" / "fmc_combine_data.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
