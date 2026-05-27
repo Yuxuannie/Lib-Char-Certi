@@ -18,7 +18,7 @@ from . import __version__
 from .config import SUPPORTED_TYPES, SUPPORTED_VENDORS, build_config, parse_csv
 from .stages.fmc_combine_data import run_fmc_combine_data
 from .stages.full_mc_parse_and_normalize import run_full_mc_parse_and_normalize
-from .stages.get_pr_sigma import run_get_pr_sigma
+from .stages.get_pr_sigma import run_build_pr_table
 from .stages.lib_join_sigma import run_lib_join_sigma
 
 OUTPUT_DIRECTORIES = (
@@ -61,7 +61,7 @@ PLANNED_STAGE_STATUS = (
         "planned_pr": "PR 5",
     },
     {
-        "stage": "get_pr_sigma",
+        "stage": "build_pr_table",
         "pipeline": "sigma",
         "implemented": False,
         "planned_pr": "PR 6",
@@ -223,6 +223,17 @@ def _announce_stage(stage: dict) -> None:
     if reason:
         msg += f" ({reason})"
     print(msg)
+    if stage.get("log_file"):
+        print(f"[{name}] log_file={stage['log_file']}")
+    failures = stage.get("failures") or []
+    if failures:
+        print(f"[{name}] failures={len(failures)} first_reason={failures[0].get('reason','unknown')}")
+    if stage.get("failure_summary"):
+        fs = stage["failure_summary"]
+        print(
+            f"[{name}] failure_summary=count:{fs.get('count', 0)} "
+            f"partial_success:{fs.get('has_partial_success', False)}"
+        )
 
 
 def _record_stage(stage_execution: list, compatibility_stage_reports: list, result_obj) -> bool:
@@ -264,16 +275,12 @@ def run(argv: Optional[Iterable[str]] = None) -> int:
         fmc_result = run_fmc_combine_data(config)
         failed = _record_stage(stage_execution, compatibility_stage_reports, fmc_result) or failed
 
-    if config.run_moments and args.enable_full_mc:
-        print("[full_mc_parse_and_normalize] running")
-        full_mc_result = run_full_mc_parse_and_normalize(config)
-        failed = _record_stage(stage_execution, compatibility_stage_reports, full_mc_result) or failed
-    elif config.run_moments and not args.enable_full_mc:
+    if config.run_moments:
         skipped = {
             "stage": "full_mc_parse_and_normalize",
             "pipeline": "moments",
             "status": "skipped",
-            "reason": "deferred_by_user_focus_on_fmc",
+            "reason": "full_mc_deferred_use_fmc_for_sigma_and_moments",
         }
         stage_execution.append(skipped)
         _announce_stage(skipped)
@@ -284,9 +291,22 @@ def run(argv: Optional[Iterable[str]] = None) -> int:
         failed = _record_stage(stage_execution, compatibility_stage_reports, lib_join_result) or failed
 
     if config.run_sigma:
-        print("[get_pr_sigma] running")
-        sigma_pr_result = run_get_pr_sigma(config)
+        print("[build_pr_table] running")
+        sigma_pr_result = run_build_pr_table(config)
         failed = _record_stage(stage_execution, compatibility_stage_reports, sigma_pr_result) or failed
+    else:
+        skipped = {
+            "stage": "build_pr_table",
+            "pipeline": "sigma,moments",
+            "status": "skipped",
+            "reason": "requires_fmc_inputs",
+        }
+        stage_execution.append(skipped)
+        _announce_stage(skipped)
+
+    from .stages.pr_web_app import run_generate_pr_web_app
+    web_result = run_generate_pr_web_app(config, stage_execution)
+    failed = _record_stage(stage_execution, compatibility_stage_reports, web_result) or failed
 
     write_manifests(config, stage_execution, compatibility_stage_reports)
     print(f"Initialized cert_data_process output tree at: {config.output_dir}")
