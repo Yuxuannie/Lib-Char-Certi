@@ -261,7 +261,12 @@ def run_fmc_combine_data(config: CertDataProcessConfig) -> FmcCombineDataResult:
                 log_lines.append(f"failure={failure}")
             log_lines.append("")
 
-    status = "failed" if failures else "passed"
+    if processed and failures and len(failures) < len(processed):
+        status = "partial"
+    elif failures:
+        status = "failed"
+    else:
+        status = "passed"
     ended_at = _utc_now()
     stage_execution = {
         "stage": "fmc_combine_data",
@@ -280,6 +285,20 @@ def run_fmc_combine_data(config: CertDataProcessConfig) -> FmcCombineDataResult:
         "status": "not_evaluated",
         "reason": "Compatibility fixture comparison runs in tests; CLI does not accept expected fixture paths in PR 2.",
     }
+    log_lines.extend(
+        [
+            "summary:",
+            f"status={status}",
+            f"processed_pairs={len(processed)}",
+            f"failure_count={len(failures)}",
+        ]
+    )
+    if failures:
+        log_lines.append("failure_reasons:")
+        for failure in failures:
+            log_lines.append(
+                f"  - corner={failure.get('corner')} type={failure.get('type')} reason={failure.get('reason')} detail={failure.get('detail','')}"
+            )
 
     log_path = config.output_dir / "logs" / "fmc_combine_data.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)

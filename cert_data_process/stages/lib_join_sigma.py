@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import time
 from dataclasses import dataclass
@@ -108,7 +109,19 @@ def run_lib_join_sigma(config: CertDataProcessConfig) -> SigmaLibJoinResult:
         return SigmaLibJoinResult(stage, {"stage": "lib_join_sigma", "status": "not_evaluated", "reason": "No .lib files found in --lib-dir; stage skipped."})
 
     failures: list[dict[str, Any]] = []
-    log_lines: list[str] = []
+    log_lines: list[str] = [
+        "stage=lib_join_sigma",
+        f"started_at_utc={started_at}",
+        f"normalized_dir={normalized_dir}",
+        f"combined_dir={combined_dir}",
+        f"lib_dir={config.lib_dir}",
+        f"liberate_in_path={bool(shutil.which('liberate'))}",
+        "",
+        "expected_liberate_env_hint:",
+        "  source /tools/dotfile_new/cshrc.liberate 23.1.3.028.isr3",
+        "  setenv ALTOS_MEMORY_OPTIMIZATION_OFF 1",
+        "",
+    ]
 
     for csv_path in csv_files:
         mode, lib_file = _pick_mode_and_lib(lib_files, csv_path.name)
@@ -150,7 +163,14 @@ def run_lib_join_sigma(config: CertDataProcessConfig) -> SigmaLibJoinResult:
                 "log_file": str(run_log),
                 "output_dir": str(combined_dir),
             }
-            run_log.write_text("liberate not found in PATH; lib_join_sigma skipped\n", encoding="utf-8")
+            log_lines.extend(
+                [
+                    "liberate_not_found=1",
+                    "action=source /tools/dotfile_new/cshrc.liberate 23.1.3.028.isr3",
+                    "action=setenv ALTOS_MEMORY_OPTIMIZATION_OFF 1",
+                ]
+            )
+            run_log.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
             return SigmaLibJoinResult(stage, {"stage": "lib_join_sigma", "status": "not_evaluated", "reason": "liberate executable not available in environment."})
         processed.append(
             {
@@ -180,12 +200,29 @@ def run_lib_join_sigma(config: CertDataProcessConfig) -> SigmaLibJoinResult:
                 }
             )
 
+    log_lines.extend(
+        [
+            "",
+            "summary:",
+            f"processed_count={len(processed)}",
+            f"failure_count={len(failures)}",
+        ]
+    )
+    if failures:
+        log_lines.append("failure_reasons:")
+        for failure in failures:
+            log_lines.append(
+                f"  - csv={failure.get('csv')} reason={failure.get('reason')} detail={failure.get('detail', '')}"
+            )
+
     run_log.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
 
-    status = "failed" if failures else "passed"
-    if processed and len(failures) < len(processed):
-        # preserve progress visibility; still fail for strict pipeline semantics.
-        status = "failed" if failures else "passed"
+    if processed and failures and len(failures) < len(processed):
+        status = "partial"
+    elif failures:
+        status = "failed"
+    else:
+        status = "passed"
 
     stage = {
         "stage": "lib_join_sigma",
@@ -196,6 +233,7 @@ def run_lib_join_sigma(config: CertDataProcessConfig) -> SigmaLibJoinResult:
         "duration_seconds": round(time.monotonic() - t0, 6),
         "processed": processed,
         "failures": failures,
+        "failure_summary": {"count": len(failures), "has_partial_success": bool(processed and failures and len(failures) < len(processed))},
         "log_file": str(run_log),
         "output_dir": str(combined_dir),
     }

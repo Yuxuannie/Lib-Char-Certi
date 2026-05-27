@@ -85,10 +85,20 @@ def run_build_pr_table(config: CertDataProcessConfig) -> PrTableResult:
         }
         return PrTableResult(stage, {"stage": "build_pr_table", "status": "not_evaluated", "reason": "No sigma RPT files found; stage skipped."})
     proc = subprocess.run(cmd, capture_output=True, text=True)
-    run_log.write_text(
-        f"cmd={' '.join(cmd)}\nexit_code={proc.returncode}\n\nSTDOUT\n{proc.stdout}\n\nSTDERR\n{proc.stderr}\n",
-        encoding="utf-8",
+    log_lines.extend(
+        [
+            f"exit_code={proc.returncode}",
+            "",
+            "STDOUT",
+            proc.stdout,
+            "",
+            "STDERR",
+            proc.stderr,
+            "",
+            f"result={'passed' if proc.returncode == 0 else 'failed'}",
+        ]
     )
+    run_log.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
 
     stage = {
         "stage": "build_pr_table",
