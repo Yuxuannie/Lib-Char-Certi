@@ -140,7 +140,17 @@ def run_full_mc_parse_and_normalize(config: CertDataProcessConfig) -> FullMcNorm
     layer_b_count = 0
     mc_golden_count = 0
 
+    log_lines = [
+        "stage=full_mc_parse_and_normalize",
+        f"node={_node(config)}",
+        f"full_mc_golden_dir={config.full_mc_golden_dir}",
+        f"requested_corners={','.join(config.corners)}",
+        f"requested_types={','.join(config.types)}",
+        "",
+    ]
+
     for corner in config.corners:
+        print(f"[full_mc_parse_and_normalize] processing corner={corner}")
         corner_dir = root / corner
         rows_delay: list[list[Any]] = []
         rows_slew: list[list[Any]] = []
@@ -229,7 +239,7 @@ def run_full_mc_parse_and_normalize(config: CertDataProcessConfig) -> FullMcNorm
             _write_mc_golden_csv(mc_slew_out, mc_slew_rows)
             mc_golden_count += 1
 
-        processed.append({
+        corner_summary = {
             "corner": corner,
             "type": "delay,slew",
             "input_dir": str(corner_dir),
@@ -238,7 +248,20 @@ def run_full_mc_parse_and_normalize(config: CertDataProcessConfig) -> FullMcNorm
             "arc_count_total": arc_total,
             "arc_count_processed": arc_ok,
             "arc_count_failed": arc_fail,
-        })
+        }
+        processed.append(corner_summary)
+        log_lines.extend(
+            [
+                f"[corner={corner}]",
+                f"input_dir={corner_dir}",
+                f"output_csv={corner_summary['output_csv']}",
+                f"mc_output_csv={corner_summary['mc_output_csv']}",
+                f"arc_count_total={arc_total}",
+                f"arc_count_processed={arc_ok}",
+                f"arc_count_failed={arc_fail}",
+                "",
+            ]
+        )
 
     status = "failed" if failures else "passed"
     stage_execution = {
@@ -261,4 +284,11 @@ def run_full_mc_parse_and_normalize(config: CertDataProcessConfig) -> FullMcNorm
         "status": "not_evaluated",
         "reason": "Full MC normalization fixture comparison will be added with user-provided expected outputs.",
     }
+
+    for failure in failures:
+        log_lines.append(f"failure={failure}")
+    log_path = config.output_dir / "logs" / "full_mc_parse_and_normalize.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
+
     return FullMcNormalizeResult(stage_execution, compatibility_stage_report)
