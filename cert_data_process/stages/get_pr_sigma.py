@@ -1,4 +1,4 @@
-"""Sigma pass-rate stage wrapper using legacy check_sigma.py."""
+"""PR table stage wrapper using legacy check_sigma.py."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from cert_data_process.config import CertDataProcessConfig
 
 
 @dataclass(frozen=True)
-class SigmaPrResult:
+class PrTableResult:
     stage_execution: dict[str, Any]
     compatibility_stage_report: dict[str, Any]
 
@@ -26,12 +26,14 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def run_get_pr_sigma(config: CertDataProcessConfig) -> SigmaPrResult:
+def run_build_pr_table(config: CertDataProcessConfig) -> PrTableResult:
     started_at = _utc_now()
     t0 = time.monotonic()
 
-    root_path = config.output_dir / "combined" / "sigma"
-    script = Path("2-data_process/get_PR/Sigma/check_sigma.py")
+    output_dir = config.output_dir.resolve()
+    root_path = (output_dir / "combined" / "sigma").resolve()
+    repo_root = Path(__file__).resolve().parents[2]
+    script = (repo_root / "2-data_process/get_PR/Sigma/check_sigma.py").resolve()
     cmd = [
         "python3",
         str(script),
@@ -45,13 +47,49 @@ def run_get_pr_sigma(config: CertDataProcessConfig) -> SigmaPrResult:
         "INFO",
     ]
 
-    logs_dir = config.output_dir / "logs"
+    logs_dir = (output_dir / "logs").resolve()
     logs_dir.mkdir(parents=True, exist_ok=True)
-    run_log = logs_dir / "get_pr_sigma.log"
+    run_log = logs_dir / "build_pr_table.log"
+    log_lines = [
+        "stage=build_pr_table",
+        f"started_at_utc={started_at}",
+        f"repo_root={repo_root}",
+        f"root_path={root_path}",
+        f"script={script}",
+        f"script_exists={script.is_file()}",
+        f"requested_corners={','.join(config.corners)}",
+        f"requested_types={','.join([t for t in config.types if t in {'delay','slew','hold'}])}",
+        f"cmd={' '.join(cmd)}",
+        "",
+    ]
+
+    if not script.is_file():
+        stage = {
+            "stage": "build_pr_table",
+            "pipeline": "sigma",
+            "status": "failed",
+            "reason": "missing_check_sigma_script",
+            "started_at_utc": started_at,
+            "ended_at_utc": _utc_now(),
+            "duration_seconds": round(time.monotonic() - t0, 6),
+            "root_path": str(root_path),
+            "script": str(script),
+            "command": " ".join(cmd),
+            "log_file": str(run_log),
+            "failures": [
+                {
+                    "reason": "missing_check_sigma_script",
+                    "detail": f"PR table script not found: {script}",
+                }
+            ],
+        }
+        log_lines.append(f"result=failed reason=missing_check_sigma_script script={script}")
+        run_log.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
+        return PrTableResult(stage, {"stage": "build_pr_table", "status": "not_evaluated", "reason": "check_sigma.py script missing; stage failed."})
 
     if not root_path.is_dir():
         stage = {
-            "stage": "get_pr_sigma",
+            "stage": "build_pr_table",
             "pipeline": "sigma",
             "status": "skipped",
             "started_at_utc": started_at,
@@ -66,13 +104,15 @@ def run_get_pr_sigma(config: CertDataProcessConfig) -> SigmaPrResult:
                 }
             ],
         }
-        return SigmaPrResult(stage, {"stage": "get_pr_sigma", "status": "not_evaluated", "reason": "No sigma combined inputs found; stage skipped."})
+        log_lines.append("result=skipped reason=missing_sigma_combined_dir")
+        run_log.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
+        return PrTableResult(stage, {"stage": "build_pr_table", "status": "not_evaluated", "reason": "No sigma combined inputs found; stage skipped."})
 
 
     rpt_candidates = [f for f in root_path.iterdir() if f.is_file() and f.suffix == ".rpt" and "fmc" in f.name.lower()]
     if not rpt_candidates:
         stage = {
-            "stage": "get_pr_sigma",
+            "stage": "build_pr_table",
             "pipeline": "sigma",
             "status": "skipped",
             "started_at_utc": started_at,
@@ -83,15 +123,27 @@ def run_get_pr_sigma(config: CertDataProcessConfig) -> SigmaPrResult:
             "failures": [],
             "reason": "no_sigma_rpt_inputs",
         }
-        return SigmaPrResult(stage, {"stage": "get_pr_sigma", "status": "not_evaluated", "reason": "No sigma RPT files found; stage skipped."})
-    proc = subprocess.run(cmd, capture_output=True, text=True)
-    run_log.write_text(
-        f"cmd={' '.join(cmd)}\nexit_code={proc.returncode}\n\nSTDOUT\n{proc.stdout}\n\nSTDERR\n{proc.stderr}\n",
-        encoding="utf-8",
+        log_lines.append("result=skipped reason=no_sigma_rpt_inputs")
+        run_log.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
+        return PrTableResult(stage, {"stage": "build_pr_table", "status": "not_evaluated", "reason": "No sigma RPT files found; stage skipped."})
+    proc = subprocess.run(cmd, cwd=str(repo_root), capture_output=True, text=True)
+    log_lines.extend(
+        [
+            f"exit_code={proc.returncode}",
+            "",
+            "STDOUT",
+            proc.stdout,
+            "",
+            "STDERR",
+            proc.stderr,
+            "",
+            f"result={'passed' if proc.returncode == 0 else 'failed'}",
+        ]
     )
+    run_log.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
 
     stage = {
-        "stage": "get_pr_sigma",
+        "stage": "build_pr_table",
         "pipeline": "sigma",
         "status": "passed" if proc.returncode == 0 else "failed",
         "started_at_utc": started_at,
@@ -104,14 +156,19 @@ def run_get_pr_sigma(config: CertDataProcessConfig) -> SigmaPrResult:
             "sigma_pr_table": str(root_path / "sigma_PR_table.csv"),
             "sigma_pr_table_moments": str(root_path / "sigma_PR_table_moments.csv"),
         },
-        "failures": [] if proc.returncode == 0 else [{"reason": "legacy_sigma_script_failed", "detail": "See get_pr_sigma.log"}],
+        "failures": [] if proc.returncode == 0 else [{"reason": "legacy_sigma_script_failed", "detail": "See build_pr_table.log"}],
     }
 
-    return SigmaPrResult(
+    return PrTableResult(
         stage,
         {
-            "stage": "get_pr_sigma",
+            "stage": "build_pr_table",
             "status": "not_evaluated",
             "reason": "Legacy script output parity should be validated with fixture diff in integration env.",
         },
     )
+
+
+# Backward-compatible alias during rename transition.
+run_get_pr_sigma = run_build_pr_table
+SigmaPrResult = PrTableResult
