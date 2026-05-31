@@ -256,8 +256,11 @@ class CertiApp:
     def _build_results(self):
         ttk = self.ttk
         f = self.tab_res
-        self.res_title = ttk.Label(f, text="No batch loaded.", style="Sec.TLabel")
-        self.res_title.pack(anchor="w", pady=(0, 8))
+        bar = ttk.Frame(f); bar.pack(fill="x", pady=(0, 8))
+        self.res_title = ttk.Label(bar, text="No batch loaded.", style="Sec.TLabel")
+        self.res_title.pack(side="left")
+        self.btn_rerun = ttk.Button(bar, text="Load config → Setup (rerun)", command=self._rerun_loaded)
+        self.btn_rerun.pack(side="right")
         ttk.Label(f, text="Sigma", style="Sec.TLabel").pack(anchor="w")
         self.tv_sigma = self._make_table(f, ["Corner", "Type", "Early Base", "Early +W1",
                                              "Late Base", "Late +W1", "Coverage", "Health"])
@@ -393,6 +396,7 @@ class CertiApp:
 
     def load_results(self, batch_id):
         rec = runs.read_run_record(self.runs_root, batch_id) if batch_id else None
+        self.loaded_rec = rec
         for tv in (self.tv_sigma, self.tv_mom):
             for iid in tv.get_children():
                 tv.delete(iid)
@@ -409,6 +413,32 @@ class CertiApp:
                 short_corner(r["corner"]), r["type"], fmt_pr(r.get("ms")), fmt_pr(r.get("std")),
                 fmt_pr(r.get("skew")), coverage_text(r), r.get("health", "")))
         self.nb.select(self.tab_res)
+
+    def _set_entry(self, entry, val):
+        entry.delete(0, "end")
+        entry.insert(0, val or "")
+
+    def _rerun_loaded(self):
+        """Load the currently-open batch's config back into Setup so it can be
+        re-run (optionally after tweaks)."""
+        from tkinter import messagebox
+        rec = getattr(self, "loaded_rec", None)
+        if not rec:
+            return messagebox.showinfo("Rerun", "Open a batch (Results/History) first, then load its config.")
+        cfg = rec.get("config", {})
+        self.vendor.set(cfg.get("vendor", "cdns"))
+        self._set_entry(self.e_name, rec.get("name", ""))
+        self._set_entry(self.e_proc, cfg.get("process", ""))
+        self._set_entry(self.e_ver, cfg.get("process_version", ""))
+        self.corners = list(cfg.get("corners", []))
+        self.lst_corner.delete(0, "end")
+        for c in self.corners:
+            self.lst_corner.insert("end", c)
+        for t, var in self.type_vars.items():
+            var.set(1 if t in (cfg.get("types") or []) else 0)
+        self._set_entry(self.e_fmc, cfg.get("fmc_golden_dir") or "")
+        self._set_entry(self.e_lib, cfg.get("lib_dir") or "")
+        self.nb.select(self.tab_setup)
 
     def _do_compare(self):
         ttk = self.ttk
