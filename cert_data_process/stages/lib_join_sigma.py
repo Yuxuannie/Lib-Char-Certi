@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -203,6 +205,8 @@ def run_lib_join_sigma(config: CertDataProcessConfig) -> SigmaLibJoinResult:
         )
     log_lines.append("")
 
+    # ---- Phase 1: build the job list (cheap); record failures for unmatched ----
+    jobs: list[tuple[Path, Path, str]] = []  # (csv_path, lib_file, mode)
     for csv_path in csv_files:
         corner = _corner_for_csv(csv_path.name, requested_corners)
         mode = _mode_for_csv(csv_path.name)
@@ -247,63 +251,98 @@ def run_lib_join_sigma(config: CertDataProcessConfig) -> SigmaLibJoinResult:
             log_lines.append(f"FAIL csv={csv_path.name} corner={corner} mode={mode} reason={reason}")
             continue
 
-        csv_path = csv_path.resolve()
-        lib_file = lib_file.resolve()
-        cmd = _build_liberate_cmd(tcl=tcl, script=script, lib_file=lib_file, csv_path=csv_path, mode=mode)
+        jobs.append((csv_path.resolve(), lib_file.resolve(), mode))
+
+    # ---- Phase 2: run liberate jobs in bounded parallel (G7 performance) ----
+    # Each job runs in its own work dir so liberate temp/log files cannot collide;
+    # the job's outputs (named after the CSV stem) are moved up to combined_dir.
+    # Worker cap is memory-aware: the host has many cores but liberate is RAM-heavy,
+    # so default low and let CERTI_LIB_JOIN_WORKERS tune it.
+    workers_env = os.environ.get("CERTI_LIB_JOIN_WORKERS")
+    try:
+        workers = int(workers_env) if workers_env else 4
+    except ValueError:
+        workers = 4
+    workers = max(1, min(workers, len(jobs))) if jobs else 1
+    log_lines.append(f"lib_join_workers={workers} (set CERTI_LIB_JOIN_WORKERS to tune; lower if memory-bound)")
+    log_lines.append("")
+
+    liberate_missing = {"hit": False}
+
+    def _run_job(job: "tuple[Path, Path, str]"):
+        csv_path, lib_file, mode = job
         shell_cmd = _build_liberate_shell_cmd(tcl=tcl, script=script, lib_file=lib_file, csv_path=csv_path, mode=mode)
-
+        job_dir = combined_dir / f".libjob_{csv_path.stem}"
+        shutil.rmtree(job_dir, ignore_errors=True)
+        job_dir.mkdir(parents=True, exist_ok=True)
         try:
-            proc = subprocess.run(["csh", "-fc", shell_cmd], cwd=str(combined_dir), capture_output=True, text=True)
+            proc = subprocess.run(["csh", "-fc", shell_cmd], cwd=str(job_dir), capture_output=True, text=True)
         except FileNotFoundError:
-            stage = {
-                "stage": "lib_join_sigma",
-                "pipeline": "sigma",
-                "status": "skipped",
-                "reason": "liberate_not_found",
-                "started_at_utc": started_at,
-                "ended_at_utc": _utc_now(),
-                "duration_seconds": round(time.monotonic() - t0, 6),
-                "processed": processed,
-                "failures": [],
-                "log_file": str(run_log),
-                "output_dir": str(combined_dir),
-            }
-            log_lines.extend(
-                [
-                    "liberate_not_found=1",
-                    "action=source /tools/dotfile_new/cshrc.liberate 23.1.3.028.isr3",
-                    "action=setenv ALTOS_MEMORY_OPTIMIZATION_OFF 1",
-                ]
-            )
-            run_log.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
-            return SigmaLibJoinResult(stage, {"stage": "lib_join_sigma", "status": "not_evaluated", "reason": "liberate executable not available in environment."})
-        processed.append(
-            {
-                "csv": str(csv_path),
-                "lib": str(lib_file),
-                "mode": mode,
-                "exit_code": proc.returncode,
-                "cmd": shell_cmd,
-            }
-        )
-        log_lines.append(f"CMD: {shell_cmd}")
-        log_lines.append(f"EXIT: {proc.returncode}")
-        if proc.stdout:
-            log_lines.append("STDOUT:")
-            log_lines.append(proc.stdout)
-        if proc.stderr:
-            log_lines.append("STDERR:")
-            log_lines.append(proc.stderr)
-        log_lines.append("-" * 60)
+            liberate_missing["hit"] = True
+            shutil.rmtree(job_dir, ignore_errors=True)
+            return None
+        moved = []
+        for produced in job_dir.glob(f"{csv_path.stem}*"):
+            dest = combined_dir / produced.name
+            if dest.exists():
+                dest.unlink()
+            shutil.move(str(produced), str(dest))
+            moved.append(dest.name)
+        shutil.rmtree(job_dir, ignore_errors=True)
+        return {
+            "csv": str(csv_path), "lib": str(lib_file), "mode": mode,
+            "exit_code": proc.returncode, "cmd": shell_cmd,
+            "stdout": proc.stdout, "stderr": proc.stderr, "moved": moved,
+        }
 
-        if proc.returncode != 0:
-            failures.append(
-                {
-                    "csv": str(csv_path),
-                    "reason": "lib_join_failed",
-                    "detail": f"liberate exited with {proc.returncode}",
-                }
-            )
+    if workers == 1 or len(jobs) < 2:
+        results = [_run_job(j) for j in jobs]
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            results = list(executor.map(_run_job, jobs))
+
+    if liberate_missing["hit"] and all(r is None for r in results):
+        stage = {
+            "stage": "lib_join_sigma",
+            "pipeline": "sigma",
+            "status": "skipped",
+            "reason": "liberate_not_found",
+            "started_at_utc": started_at,
+            "ended_at_utc": _utc_now(),
+            "duration_seconds": round(time.monotonic() - t0, 6),
+            "processed": processed,
+            "failures": [],
+            "log_file": str(run_log),
+            "output_dir": str(combined_dir),
+        }
+        log_lines.extend([
+            "liberate_not_found=1",
+            "action=source /tools/dotfile_new/cshrc.liberate 23.1.3.028.isr3",
+            "action=setenv ALTOS_MEMORY_OPTIMIZATION_OFF 1",
+        ])
+        run_log.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
+        return SigmaLibJoinResult(stage, {"stage": "lib_join_sigma", "status": "not_evaluated", "reason": "liberate executable not available in environment."})
+
+    for r in results:
+        if r is None:
+            continue
+        processed.append({"csv": r["csv"], "lib": r["lib"], "mode": r["mode"], "exit_code": r["exit_code"], "cmd": r["cmd"]})
+        log_lines.append(f"CMD: {r['cmd']}")
+        log_lines.append(f"EXIT: {r['exit_code']}")
+        if r["stdout"]:
+            log_lines.append("STDOUT:")
+            log_lines.append(r["stdout"])
+        if r["stderr"]:
+            log_lines.append("STDERR:")
+            log_lines.append(r["stderr"])
+        log_lines.append(f"outputs: {', '.join(r['moved']) if r['moved'] else '(none produced)'}")
+        log_lines.append("-" * 60)
+        if r["exit_code"] != 0:
+            failures.append({
+                "csv": r["csv"],
+                "reason": "lib_join_failed",
+                "detail": f"liberate exited with {r['exit_code']}",
+            })
 
     log_lines.extend(
         [
