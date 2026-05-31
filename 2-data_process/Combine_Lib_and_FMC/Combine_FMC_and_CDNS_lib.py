@@ -198,6 +198,7 @@ else:
     arc_found = [False]*(len(fmc_txt)-1)
     lib_nominal, lib_early_sigma, lib_late_sigma, lib_skewness, lib_std_dev, lib_mean_shift = [], [], [], [], [], []
     missing_arcs = []  # FMC golden arcs the lib does not cover (reported, kept NaN, never dropped)
+    lookup_debug = []  # per-arc lib-lookup diagnostics (why a lib value ends up 0/NaN)
 
     for index, row in fmc_txt_df.iterrows():
         arc_info = row['Arc']
@@ -213,13 +214,18 @@ else:
         r_nominal = r_early = r_late = r_skew = r_std = r_mean = np.nan
 
         # Start read from library using ldbx
+        cell_ok = pin_ok = False
+        n_matched = 0
         try:
             cell = lib.getChildren("cell", cell_name)
+            cell_ok = bool(cell)
             out_pin_grp = cell[0].getChildren("pin", out_pin)
+            pin_ok = bool(out_pin_grp)
             tim_groups = out_pin_grp[0].getChildren("timing")
         except Exception as e:
             print(f"Warning: cell/pin lookup failed for arc {arc_info}: {e}")
             tim_groups = []
+        n_timing = len(tim_groups)
 
         for each_tim_group in tim_groups:
             tim_block_attr = each_tim_group.getAttr()
@@ -238,6 +244,7 @@ else:
             if args.mode == 'Delay' or args.mode == 'Slew':
                 if matched:
                     arc_found[index] = True
+                    n_matched += 1
 
                     sigma_tbl_grp = each_tim_group.getChildren(sigma_table)
                     for each_sigma_tbl in sigma_tbl_grp:
@@ -271,6 +278,7 @@ else:
             if args.mode == 'Hold':
                 if 'hold_' in time_type_attr and matched:
                     arc_found[index] = True
+                    n_matched += 1
 
                     sigma_tbl_grp = each_tim_group.getChildren(sigma_table)
                     for each_sigma_tbl in sigma_tbl_grp:
@@ -296,6 +304,13 @@ else:
             lib_late_sigma.append(r_late)
             if args.nominal_check:
                 lib_nominal.append(r_nominal)
+
+        lookup_debug.append({
+            'Arc': arc_info, 'cell_found': cell_ok, 'pin_found': pin_ok,
+            'n_timing': n_timing, 'n_matched': n_matched,
+            'lib_early': r_early, 'lib_late': r_late,
+            'when': when, 'fir_index': fir_index, 'sec_index': sec_index,
+        })
 
         if not arc_found[index]:
             missing_arcs.append(arc_info)
@@ -384,3 +399,17 @@ if missing_arcs:
     print(f"WARNING: {len(missing_arcs)}/{total_golden} golden arcs NOT covered by lib; listed in {miss_file}")
 else:
     print(f"All {total_golden} golden arcs covered by lib.")
+
+# Per-arc lib-lookup diagnostics: pinpoint WHY a lib value is 0/NaN
+# (cell/pin found? how many timing groups? how many matched? extracted values?).
+import csv as _csv_dbg
+_dbg_file = '{}_lookup_debug.csv'.format(basename_noext)
+with open(_dbg_file, 'w', newline='') as _df:
+    _w = _csv_dbg.DictWriter(_df, fieldnames=[
+        'Arc', 'cell_found', 'pin_found', 'n_timing', 'n_matched',
+        'lib_early', 'lib_late', 'when', 'fir_index', 'sec_index'])
+    _w.writeheader()
+    _w.writerows(lookup_debug)
+_zero = sum(1 for d in lookup_debug if (d['lib_early'] == 0 or d['lib_late'] == 0))
+_nomatch = sum(1 for d in lookup_debug if d['n_matched'] == 0)
+print(f"Lookup diagnostics: {_dbg_file} | arcs with a zero lib value={_zero} | arcs with no matched timing group={_nomatch}")
