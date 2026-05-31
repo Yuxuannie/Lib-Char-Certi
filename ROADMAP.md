@@ -26,9 +26,24 @@ Drop the Full-MC dependency. Compute moments (meanshift / std / skew) Base_PR
 and Base_PR+Waiver1 directly from the FMC combined data in a single pass
 (MC_Std/Skew/Meansht + lib std/skew/mean already exist in the combine RPT).
 
-## G5 — User-friendly GUI
-Front-end over the pipeline + outputs. Will host an analysis section (incl. the
-optimistic analysis deferred from G1).
+## G5 — User-friendly GUI  (prototype built)
+The GUI is the complete-flow product; future features (incl. the deferred
+optimistic analysis from G1) attach to it. Air-gapped EDA host → single
+self-contained HTML, no CDN/npm/pip; a stdlib Python backend injects
+`window.CERTI_DATA`.
+- `gui/certi_console.html` — phosphor-green precision-instrument console:
+  Setup → Pipeline → Results (sigma+moments PR, coverage, Data_Health) →
+  History → multi-batch Compare. Renders from CERTI_DATA (demo data embedded).
+- Next: wire the Python backend to emit CERTI_DATA from real run artifacts
+  (run_manifest.json + pr tables + history); serve via stdlib http.server.
+
+## G7 — Performance
+Runtime is long for multiple corners (worse for multiple batches). Dominant cost
+is `lib_join_sigma`: one `liberate` subprocess per (corner,type) CSV, each
+re-loading the lib, run sequentially. Plan: bounded-parallel lib_join (isolated
+work dir per job to avoid temp collisions; worker cap is memory-aware — host has
+48 cores but tight RAM). Later: load a shared lib once per corner for
+delay+slew; parallelize across batches.
 
 ## G6 — History + multi-batch
 Persistent run history. Support multiple batches per run: one batch = one EDA

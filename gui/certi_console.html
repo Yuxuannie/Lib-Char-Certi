@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CERTI CONSOLE — Lib-Char-Certi</title>
+<style>
+/* ============================================================
+   CERTI CONSOLE — phosphor-green precision-instrument theme.
+   Self-contained: no external fonts, CDNs, or frameworks
+   (air-gapped EDA host safe). Data is injected as window.CERTI_DATA;
+   falls back to embedded demo data below.
+   ============================================================ */
+:root{
+  --bg:#070b0c; --bg2:#0b1113; --panel:#0e1618; --panel2:#101e20;
+  --grid:rgba(61,220,132,.05); --line:#1b2c2e; --line2:#27403f;
+  --ink:#cfe6db; --ink-dim:#7f968e; --ink-faint:#52645e;
+  --phos:#3ddc84; --phos-soft:#2aa564; --cyan:#41e0d6;
+  --amber:#ffb454; --red:#ff5d5d; --mag:#d96cff;
+  --mono:"JetBrains Mono","DejaVu Sans Mono","SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:"Inter var",-apple-system,"Segoe UI","DejaVu Sans",sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{
+  background:var(--bg); color:var(--ink); font-family:var(--mono);
+  font-size:13px; line-height:1.5; letter-spacing:.2px;
+  -webkit-font-smoothing:antialiased; overflow:hidden;
+}
+/* measurement grid + scanline atmosphere */
+body::before{
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background-image:
+    linear-gradient(var(--grid) 1px,transparent 1px),
+    linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:34px 34px;
+  mask-image:radial-gradient(circle at 30% 0%,#000 0%,rgba(0,0,0,.35) 70%);
+}
+body::after{
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:60;
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,0) 0 2px,rgba(0,0,0,.16) 3px);
+  opacity:.35; mix-blend-mode:multiply;
+}
+.app{position:relative; z-index:1; display:grid; grid-template-columns:236px 1fr; height:100vh}
+
+/* ---------- left rail ---------- */
+.rail{
+  border-right:1px solid var(--line); background:
+    linear-gradient(180deg,var(--panel) 0%,var(--bg2) 100%);
+  display:flex; flex-direction:column; min-height:0;
+}
+.brand{padding:20px 18px 16px; border-bottom:1px solid var(--line)}
+.brand .mark{display:flex; align-items:center; gap:9px}
+.brand .dot{width:9px; height:9px; border-radius:50%; background:var(--phos);
+  box-shadow:0 0 0 3px rgba(61,220,132,.16),0 0 14px var(--phos); animation:pulse 2.4s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+.brand h1{font-size:14px; margin:0; letter-spacing:3px; font-weight:700; color:var(--ink)}
+.brand .sub{margin-top:5px; font-size:10.5px; letter-spacing:2px; color:var(--ink-faint); text-transform:uppercase}
+nav{padding:12px 10px; display:flex; flex-direction:column; gap:3px; flex:1}
+.navItem{
+  display:flex; align-items:center; gap:11px; padding:10px 12px; border-radius:6px;
+  color:var(--ink-dim); cursor:pointer; border:1px solid transparent; user-select:none;
+  text-transform:uppercase; letter-spacing:1.5px; font-size:11px; transition:.16s;
+}
+.navItem:hover{color:var(--ink); background:rgba(61,220,132,.04); border-color:var(--line)}
+.navItem.active{color:var(--phos); background:linear-gradient(90deg,rgba(61,220,132,.12),transparent);
+  border-color:var(--line2)}
+.navItem .ix{width:18px; text-align:center; opacity:.8}
+.navItem.active .ix{text-shadow:0 0 10px var(--phos)}
+.rail .foot{padding:14px 18px; border-top:1px solid var(--line); font-size:10px; color:var(--ink-faint); letter-spacing:1px}
+.rail .foot b{color:var(--phos-soft); font-weight:600}
+
+/* ---------- main ---------- */
+.main{min-width:0; display:flex; flex-direction:column; min-height:0}
+.topbar{
+  display:flex; align-items:center; gap:16px; padding:0 22px; height:56px;
+  border-bottom:1px solid var(--line); background:rgba(11,17,19,.7); backdrop-filter:blur(4px);
+}
+.crumbs{font-size:11px; letter-spacing:2px; color:var(--ink-dim); text-transform:uppercase}
+.crumbs b{color:var(--ink)}
+.spacer{flex:1}
+.batchsel{display:flex; align-items:center; gap:8px}
+.batchsel label{font-size:10px; letter-spacing:2px; color:var(--ink-faint)}
+select,input,textarea{
+  font-family:var(--mono); font-size:12px; color:var(--ink); background:var(--panel2);
+  border:1px solid var(--line2); border-radius:5px; padding:7px 9px; outline:none; transition:.15s;
+}
+select:focus,input:focus,textarea:focus{border-color:var(--phos-soft); box-shadow:0 0 0 2px rgba(61,220,132,.12)}
+.content{padding:24px 26px; overflow:auto; flex:1; min-height:0}
+.content::-webkit-scrollbar{width:10px;height:10px}
+.content::-webkit-scrollbar-thumb{background:var(--line2); border-radius:6px}
+
+/* ---------- view machinery ---------- */
+.view{display:none; animation:rise .5s cubic-bezier(.2,.8,.2,1) both}
+.view.show{display:block}
+@keyframes rise{from{opacity:0; transform:translateY(10px)}to{opacity:1; transform:none}}
+.stagger>*{animation:rise .5s cubic-bezier(.2,.8,.2,1) both}
+.stagger>*:nth-child(1){animation-delay:.03s}.stagger>*:nth-child(2){animation-delay:.09s}
+.stagger>*:nth-child(3){animation-delay:.15s}.stagger>*:nth-child(4){animation-delay:.21s}
+.stagger>*:nth-child(5){animation-delay:.27s}.stagger>*:nth-child(6){animation-delay:.33s}
+
+.sectit{display:flex; align-items:baseline; gap:12px; margin:0 0 16px}
+.sectit h2{font-size:13px; letter-spacing:3px; text-transform:uppercase; margin:0; color:var(--ink); font-weight:700}
+.sectit .tag{font-size:10px; letter-spacing:2px; color:var(--ink-faint)}
+.sectit .rule{flex:1; height:1px; background:linear-gradient(90deg,var(--line2),transparent)}
+
+.panel{background:linear-gradient(180deg,var(--panel),var(--bg2)); border:1px solid var(--line);
+  border-radius:10px; padding:18px 20px; position:relative; overflow:hidden}
+.panel::before{content:""; position:absolute; left:0; top:0; width:100%; height:1px;
+  background:linear-gradient(90deg,transparent,var(--phos-soft),transparent); opacity:.5}
+.grid2{display:grid; grid-template-columns:1.3fr 1fr; gap:18px}
+.grid3{display:grid; grid-template-columns:repeat(4,1fr); gap:14px}
+@media(max-width:1100px){.grid2{grid-template-columns:1fr}.grid3{grid-template-columns:repeat(2,1fr)}}
+
+/* ---------- stat tiles ---------- */
+.tile{background:var(--panel); border:1px solid var(--line); border-radius:9px; padding:15px 16px; position:relative}
+.tile .k{font-size:10px; letter-spacing:2px; color:var(--ink-faint); text-transform:uppercase}
+.tile .v{font-size:30px; font-weight:700; margin-top:7px; letter-spacing:-.5px; font-variant-numeric:tabular-nums}
+.tile .d{font-size:10.5px; color:var(--ink-dim); margin-top:4px; letter-spacing:.5px}
+.tile.good .v{color:var(--phos)} .tile.warn .v{color:var(--amber)} .tile.bad .v{color:var(--red)}
+.tile .spark{position:absolute; right:14px; top:14px; font-size:10px; letter-spacing:1px}
+
+/* ---------- pipeline track ---------- */
+.track{display:flex; align-items:stretch; gap:0; margin-top:4px}
+.node{flex:1; position:relative; padding:16px 14px; border:1px solid var(--line); background:var(--panel);
+  border-radius:8px; margin-right:26px}
+.node:last-child{margin-right:0}
+.node:not(:last-child)::after{content:"›"; position:absolute; right:-20px; top:50%; transform:translateY(-50%);
+  color:var(--line2); font-size:20px}
+.node .st{font-size:9.5px; letter-spacing:2px; text-transform:uppercase; color:var(--ink-faint)}
+.node .nm{font-size:12px; margin-top:8px; color:var(--ink); letter-spacing:.5px}
+.node .led{position:absolute; top:14px; right:14px; width:8px; height:8px; border-radius:50%}
+.node[data-s="passed"] .led{background:var(--phos); box-shadow:0 0 10px var(--phos)}
+.node[data-s="partial"] .led{background:var(--amber); box-shadow:0 0 10px var(--amber)}
+.node[data-s="failed"] .led{background:var(--red); box-shadow:0 0 10px var(--red)}
+.node[data-s="skipped"] .led{background:var(--ink-faint)}
+.node .rsn{font-size:10px; color:var(--ink-dim); margin-top:7px; min-height:13px}
+
+/* ---------- data table ---------- */
+.tblwrap{border:1px solid var(--line); border-radius:9px; overflow:hidden; margin-top:6px}
+table{width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums}
+th{font-size:9.5px; letter-spacing:1.5px; text-transform:uppercase; color:var(--ink-faint); font-weight:600;
+  text-align:right; padding:11px 12px; background:var(--panel2); border-bottom:1px solid var(--line2)}
+th:first-child,td:first-child{text-align:left}
+td{padding:10px 12px; border-bottom:1px solid var(--line); font-size:12px}
+tr:last-child td{border-bottom:none}
+tbody tr:hover{background:rgba(61,220,132,.035)}
+.corner{color:var(--ink); letter-spacing:.5px}
+.pr{font-weight:600; font-size:12.5px}
+.pr.hi{color:var(--phos)} .pr.mid{color:var(--amber)} .pr.lo{color:var(--red)} .pr.na{color:var(--ink-faint)}
+.cov{display:flex; align-items:center; gap:8px; justify-content:flex-end}
+.covbar{width:54px; height:6px; border-radius:3px; background:var(--line2); overflow:hidden}
+.covbar i{display:block; height:100%; background:linear-gradient(90deg,var(--phos-soft),var(--phos));
+  border-radius:3px; transform-origin:left; animation:fill .9s cubic-bezier(.2,.8,.2,1) both}
+@keyframes fill{from{transform:scaleX(0)}}
+.pill{font-size:9.5px; letter-spacing:1.5px; padding:3px 9px; border-radius:20px; text-transform:uppercase; font-weight:600; border:1px solid}
+.pill.OK{color:var(--phos); border-color:rgba(61,220,132,.4); background:rgba(61,220,132,.08)}
+.pill.LOW_COVERAGE{color:var(--amber); border-color:rgba(255,180,84,.4); background:rgba(255,180,84,.08)}
+.pill.NO_DATA{color:var(--red); border-color:rgba(255,93,93,.45); background:rgba(255,93,93,.1)}
+
+.banner{display:flex; align-items:center; gap:12px; padding:12px 16px; border-radius:8px; margin-bottom:16px;
+  border:1px solid; font-size:12px; letter-spacing:.4px}
+.banner.NO_DATA{border-color:rgba(255,93,93,.4); background:rgba(255,93,93,.07); color:#ffb0b0}
+.banner.LOW_COVERAGE{border-color:rgba(255,180,84,.4); background:rgba(255,180,84,.07); color:#ffd8a0}
+.banner .bi{font-size:16px}
+
+/* ---------- run / setup form ---------- */
+.form{display:grid; grid-template-columns:1fr 1fr; gap:16px 22px}
+.field{display:flex; flex-direction:column; gap:7px}
+.field.wide{grid-column:1 / -1}
+.field label{font-size:10px; letter-spacing:2px; text-transform:uppercase; color:var(--ink-dim)}
+.field .hint{font-size:10px; color:var(--ink-faint); letter-spacing:.3px}
+.chips{display:flex; flex-wrap:wrap; gap:8px}
+.chip{padding:7px 13px; border:1px solid var(--line2); border-radius:20px; cursor:pointer; color:var(--ink-dim);
+  font-size:11px; letter-spacing:1px; user-select:none; transition:.15s}
+.chip.on{color:var(--bg); background:var(--phos); border-color:var(--phos); font-weight:600;
+  box-shadow:0 0 14px rgba(61,220,132,.35)}
+.btn{font-family:var(--mono); cursor:pointer; border-radius:6px; padding:11px 20px; font-size:12px; letter-spacing:2px;
+  text-transform:uppercase; border:1px solid var(--line2); background:var(--panel2); color:var(--ink); transition:.15s}
+.btn:hover{border-color:var(--phos-soft); color:var(--phos)}
+.btn.primary{background:var(--phos); color:#062; border-color:var(--phos); font-weight:700}
+.btn.primary:hover{box-shadow:0 0 22px rgba(61,220,132,.4); color:#031}
+.runbar{display:flex; align-items:center; gap:14px; margin-top:22px; padding-top:18px; border-top:1px solid var(--line)}
+
+/* ---------- history & compare ---------- */
+.batchrow{display:grid; grid-template-columns:24px 1.4fr repeat(4,1fr) 110px; align-items:center; gap:12px;
+  padding:13px 16px; border:1px solid var(--line); border-radius:9px; margin-bottom:9px; background:var(--panel);
+  cursor:pointer; transition:.15s}
+.batchrow:hover{border-color:var(--line2); background:var(--panel2)}
+.batchrow.sel{border-color:var(--phos-soft); background:linear-gradient(90deg,rgba(61,220,132,.07),transparent)}
+.batchrow .nm{color:var(--ink); letter-spacing:.5px}
+.batchrow .meta{font-size:10px; color:var(--ink-faint); margin-top:3px; letter-spacing:1px}
+.batchrow .mini{font-size:9px; letter-spacing:1.5px; color:var(--ink-faint); text-transform:uppercase}
+.batchrow .mv{font-size:15px; font-weight:700; font-variant-numeric:tabular-nums}
+.cbox{width:15px; height:15px; border:1px solid var(--line2); border-radius:4px; display:grid; place-items:center; color:var(--phos)}
+.batchrow.sel .cbox{border-color:var(--phos); background:rgba(61,220,132,.12)}
+.cmpgrid{display:grid; gap:9px; margin-top:6px}
+.delta{font-size:10px; padding:2px 7px; border-radius:4px}
+.delta.up{color:var(--phos); background:rgba(61,220,132,.1)}
+.delta.down{color:var(--red); background:rgba(255,93,93,.1)}
+.empty{color:var(--ink-faint); text-align:center; padding:40px; letter-spacing:1px; font-size:12px}
+.kbd{font-size:10px; color:var(--ink-faint); border:1px solid var(--line2); border-radius:4px; padding:1px 6px}
+.cursor{display:inline-block; width:8px; height:14px; background:var(--phos); margin-left:2px; vertical-align:-2px;
+  animation:blink 1.1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="rail">
+    <div class="brand">
+      <div class="mark"><span class="dot"></span><h1>CERTI</h1></div>
+      <div class="sub">Lib&nbsp;Char&nbsp;Certification</div>
+    </div>
+    <nav id="nav">
+      <div class="navItem active" data-view="setup"><span class="ix">⊹</span> Setup</div>
+      <div class="navItem" data-view="pipeline"><span class="ix">≣</span> Pipeline</div>
+      <div class="navItem" data-view="results"><span class="ix">◧</span> Results</div>
+      <div class="navItem" data-view="history"><span class="ix">⟲</span> History</div>
+      <div class="navItem" data-view="compare"><span class="ix">⇄</span> Compare</div>
+    </nav>
+    <div class="foot">build <b>cert_data_process</b><br>phosphor console v0.1</div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="crumbs">batch · <b id="crumbBatch">—</b></div>
+      <div class="spacer"></div>
+      <div class="batchsel">
+        <label>ACTIVE BATCH</label>
+        <select id="batchPick"></select>
+      </div>
+    </div>
+    <div class="content" id="content"></div>
+  </div>
+</div>
+
+<script>
+/* ====================== DATA LAYER ======================
+   The Python backend (pr_web_app generator) injects window.CERTI_DATA.
+   Embedded demo data below mirrors that exact shape so the console is
+   fully functional standalone (open in a browser, air-gapped). */
+const DEMO = {
+  batches: [
+    {
+      id:"n2p_v0p9_cdns_best", name:"N2P v0.9 · CDNS · Best",
+      vendor:"cdns", process:"n2p", version:"v0p9", when:"2026-05-31 12:52",
+      libdir:".../N2P_v0.9/.../1-full_lib", recipe:"select-2nd-round",
+      stages:[
+        {stage:"fmc_combine_data",status:"passed",pipeline:"sigma",reason:""},
+        {stage:"lib_join_sigma",status:"passed",pipeline:"sigma",reason:""},
+        {stage:"build_pr_table",status:"passed",pipeline:"sigma",reason:""},
+        {stage:"get_pr_moments",status:"passed",pipeline:"moments",reason:""},
+        {stage:"generate_pr_web_app",status:"passed",pipeline:"sigma,moments",reason:""}
+      ],
+      sigma:[
+        {corner:"ssgnp_0p450v_m40c",type:"delay",eBase:100.0,eW1:100.0,lBase:93.2,lW1:93.5,total:1180,covered:1180,health:"OK"},
+        {corner:"ssgnp_0p465v_m40c",type:"delay",eBase:100.0,eW1:100.0,lBase:91.1,lW1:92.4,total:1180,covered:1180,health:"OK"},
+        {corner:"ssgnp_0p480v_m40c",type:"delay",eBase:100.0,eW1:100.0,lBase:92.2,lW1:93.2,total:1180,covered:1180,health:"OK"},
+        {corner:"ssgnp_0p495v_m40c",type:"delay",eBase:100.0,eW1:100.0,lBase:91.1,lW1:92.4,total:1180,covered:1180,health:"OK"},
+        {corner:"ssgnp_0p450v_m40c",type:"slew",eBase:99.6,eW1:99.6,lBase:96.8,lW1:96.8,total:1180,covered:1180,health:"OK"},
+        {corner:"ssgnp_0p465v_m40c",type:"slew",eBase:99.9,eW1:99.9,lBase:96.7,lW1:96.7,total:1180,covered:1180,health:"OK"},
+        {corner:"ssgnp_0p450v_m40c",type:"hold",eBase:null,eW1:null,lBase:91.5,lW1:91.5,total:1261,covered:1201,health:"LOW_COVERAGE"},
+        {corner:"ssgnp_0p465v_m40c",type:"hold",eBase:null,eW1:null,lBase:96.0,lW1:96.0,total:1261,covered:1261,health:"OK"}
+      ],
+      moments:[
+        {corner:"ssgnp_0p450v_m40c",type:"delay",ms:99.1,std:97.4,skew:100.0,total:1180,covered:1180,health:"OK"},
+        {corner:"ssgnp_0p465v_m40c",type:"delay",ms:98.2,std:96.1,skew:100.0,total:1180,covered:1180,health:"OK"},
+        {corner:"ssgnp_0p450v_m40c",type:"slew",ms:97.0,std:95.5,skew:99.8,total:1180,covered:1180,health:"OK"}
+      ]
+    },
+    {
+      id:"n2p_v1p0_cdns_best", name:"N2P v1.0 · CDNS · Best",
+      vendor:"cdns", process:"n2p", version:"v1p0", when:"2026-05-30 22:12",
+      libdir:".../N2P_v1.0/.../1-full_lib", recipe:"final-libs",
+      stages:[
+        {stage:"fmc_combine_data",status:"passed",pipeline:"sigma",reason:""},
+        {stage:"lib_join_sigma",status:"partial",pipeline:"sigma",reason:"no_lib_for_corner ×3"},
+        {stage:"build_pr_table",status:"passed",pipeline:"sigma",reason:""},
+        {stage:"get_pr_moments",status:"passed",pipeline:"moments",reason:""},
+        {stage:"generate_pr_web_app",status:"passed",pipeline:"sigma,moments",reason:""}
+      ],
+      sigma:[
+        {corner:"ssgnp_0p450v_m40c",type:"delay",eBase:0,eW1:0,lBase:0,lW1:0,total:1180,covered:0,health:"NO_DATA"},
+        {corner:"ssgnp_0p465v_m40c",type:"delay",eBase:0,eW1:0,lBase:0,lW1:0,total:1180,covered:0,health:"NO_DATA"},
+        {corner:"ssgnp_0p480v_m40c",type:"delay",eBase:0,eW1:0,lBase:0,lW1:0,total:1180,covered:0,health:"NO_DATA"}
+      ],
+      moments:[
+        {corner:"ssgnp_0p450v_m40c",type:"delay",ms:0,std:0,skew:0,total:1180,covered:0,health:"NO_DATA"}
+      ]
+    },
+    {
+      id:"n2p_v0p9_snps_best", name:"N2P v0.9 · SNPS · Best",
+      vendor:"snps", process:"n2p", version:"v0p9", when:"2026-05-31 09:40",
+      libdir:".../N2P_v0.9/.../SNPS/1-full_lib", recipe:"select-2nd-round",
+      stages:[
+        {stage:"fmc_combine_data",status:"passed",pipeline:"sigma",reason:""},
+        {stage:"lib_join_sigma",status:"passed",pipeline:"sigma",reason:""},
+        {stage:"build_pr_table",status:"passed",pipeline:"sigma",reason:""},
+        {stage:"get_pr_moments",status:"passed",pipeline:"moments",reason:""},
+        {stage:"generate_pr_web_app",status:"passed",pipeline:"sigma,moments",reason:""}
+      ],
+      sigma:[
+        {corner:"ssgnp_0p450v_m40c",type:"delay",eBase:99.8,eW1:100.0,lBase:94.1,lW1:94.6,total:1180,covered:1174,health:"OK"},
+        {corner:"ssgnp_0p465v_m40c",type:"delay",eBase:99.9,eW1:100.0,lBase:93.0,lW1:93.8,total:1180,covered:1174,health:"OK"},
+        {corner:"ssgnp_0p450v_m40c",type:"hold",eBase:null,eW1:null,lBase:90.2,lW1:90.6,total:1261,covered:1261,health:"OK"}
+      ],
+      moments:[
+        {corner:"ssgnp_0p450v_m40c",type:"delay",ms:98.4,std:96.9,skew:99.9,total:1180,covered:1174,health:"OK"}
+      ]
+    }
+  ]
+};
+const DATA = (window.CERTI_DATA && window.CERTI_DATA.batches) ? window.CERTI_DATA : DEMO;
+
+/* ====================== HELPERS ====================== */
+const $ = s=>document.querySelector(s);
+const el=(t,c,h)=>{const e=document.createElement(t); if(c)e.className=c; if(h!=null)e.innerHTML=h; return e;};
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));
+const prCls=v=> v==null?"na": v>=95?"hi": v>=90?"mid":"lo";
+const fmtPR=v=> v==null?"—":v.toFixed(1)+"%";
+const TARGET=95;
+let state={batchId:DATA.batches[0].id, view:"setup", compare:new Set()};
+const batch=()=>DATA.batches.find(b=>b.id===state.batchId);
+
+/* ====================== VIEWS ====================== */
+function viewSetup(b){
+  const corners=["ssgnp_0p450v_m40c","ssgnp_0p465v_m40c","ssgnp_0p480v_m40c","ssgnp_0p495v_m40c"];
+  const types=["delay","slew","hold"];
+  const usedCorners=new Set(b.sigma.map(r=>r.corner));
+  const usedTypes=new Set(b.sigma.map(r=>r.type));
+  return `
+  <div class="stagger">
+    <div class="sectit"><h2>Run Setup</h2><span class="tag">configure a certification batch — one batch ＝ one EDA recipe</span><span class="rule"></span></div>
+    <div class="panel">
+      <div class="form">
+        <div class="field"><label>Vendor</label>
+          <div class="chips">${["cdns","snps"].map(v=>`<span class="chip ${b.vendor===v?"on":""}">${v}</span>`).join("")}</div></div>
+        <div class="field"><label>Batch / Recipe name</label><input value="${esc(b.name)}"></div>
+        <div class="field"><label>Process</label><input value="${esc(b.process)}"></div>
+        <div class="field"><label>Process version</label><input value="${esc(b.version)}"></div>
+        <div class="field wide"><label>Corners</label>
+          <div class="chips">${corners.map(c=>`<span class="chip ${usedCorners.has(c)?"on":""}">${c.replace("ssgnp_","").replace("_m40c","")}</span>`).join("")}</div>
+          <span class="hint">one batch sweeps every selected corner</span></div>
+        <div class="field wide"><label>Timing types</label>
+          <div class="chips">${types.map(t=>`<span class="chip ${usedTypes.has(t)?"on":""}">${t}</span>`).join("")}</div></div>
+        <div class="field wide"><label>FMC golden dir (decks)</label><input value="/SIM/.../N2P_${esc(b.version)}/2-select 2nd round/1-FMC golden/gen DECKS/"></div>
+        <div class="field wide"><label>Lib dir</label><input value="${esc(b.libdir)}"></div>
+        <div class="field wide"><label>Output dir</label><input value="./${esc(b.id)}/"></div>
+      </div>
+      <div class="runbar">
+        <button class="btn primary" onclick="go('pipeline')">▶ Run certification</button>
+        <button class="btn">Dry-run / validate inputs</button>
+        <span class="hint">Moments are derived from FMC data — no Full-MC required. <span class="cursor"></span></span>
+      </div>
+    </div>
+  </div>`;
+}
+
+function viewPipeline(b){
+  const order=["fmc_combine_data","lib_join_sigma","build_pr_table","get_pr_moments","generate_pr_web_app"];
+  const label={fmc_combine_data:"FMC Combine",lib_join_sigma:"Lib Join",build_pr_table:"Sigma PR",get_pr_moments:"Moments PR",generate_pr_web_app:"Dashboard"};
+  const nodes=order.map(s=>{const st=b.stages.find(x=>x.stage===s)||{status:"skipped",reason:""};
+    return `<div class="node" data-s="${st.status}"><span class="led"></span><div class="st">${st.status}</div>
+      <div class="nm">${label[s]}</div><div class="rsn">${esc(st.reason||"·")}</div></div>`;}).join("");
+  const counts=b.stages.reduce((a,s)=>{a[s.status]=(a[s.status]||0)+1;return a;},{});
+  return `
+  <div class="stagger">
+    <div class="sectit"><h2>Pipeline</h2><span class="tag">${esc(b.name)}</span><span class="rule"></span></div>
+    <div class="grid3">
+      <div class="tile good"><div class="k">Passed</div><div class="v">${counts.passed||0}</div><div class="d">stages green</div></div>
+      <div class="tile warn"><div class="k">Partial</div><div class="v">${counts.partial||0}</div><div class="d">needs attention</div></div>
+      <div class="tile bad"><div class="k">Failed</div><div class="v">${counts.failed||0}</div><div class="d">blocking</div></div>
+      <div class="tile"><div class="k">Skipped</div><div class="v">${counts.skipped||0}</div><div class="d">not run</div></div>
+    </div>
+    <div style="height:18px"></div>
+    <div class="panel"><div class="track">${nodes}</div></div>
+  </div>`;
+}
+
+function healthBanner(rows){
+  const nd=rows.filter(r=>r.health==="NO_DATA").length;
+  const lc=rows.filter(r=>r.health==="LOW_COVERAGE").length;
+  if(nd) return `<div class="banner NO_DATA"><span class="bi">⚠</span><div><b>${nd} corner/type with NO_DATA.</b> The lib covers 0 arcs there — pass rates are NOT meaningful. Verify the lib is correct/complete before trusting any number below.</div></div>`;
+  if(lc) return `<div class="banner LOW_COVERAGE"><span class="bi">◑</span><div><b>${lc} corner/type below 90% coverage.</b> Pass rates are over covered arcs only; uncovered arcs are excluded and reported.</div></div>`;
+  return "";
+}
+function covCell(r){const pct=r.total?Math.round(r.covered/r.total*100):0;
+  return `<div class="cov"><span style="color:var(--ink-dim);font-size:11px">${r.covered}/${r.total}</span>
+    <span class="covbar"><i style="transform:scaleX(${(pct/100).toFixed(3)})"></i></span></div>`;}
+
+function viewResults(b){
+  const sig=b.sigma, mom=b.moments;
+  const sigRows=sig.map(r=>`<tr>
+    <td class="corner">${esc(r.corner.replace("ssgnp_","").replace("_m40c",""))}</td>
+    <td style="color:var(--ink-dim)">${esc(r.type)}</td>
+    <td class="pr ${prCls(r.eBase)}">${fmtPR(r.eBase)}</td>
+    <td class="pr ${prCls(r.eW1)}">${fmtPR(r.eW1)}</td>
+    <td class="pr ${prCls(r.lBase)}">${fmtPR(r.lBase)}</td>
+    <td class="pr ${prCls(r.lW1)}">${fmtPR(r.lW1)}</td>
+    <td>${covCell(r)}</td>
+    <td><span class="pill ${r.health}">${r.health}</span></td></tr>`).join("");
+  const momRows=mom.map(r=>`<tr>
+    <td class="corner">${esc(r.corner.replace("ssgnp_","").replace("_m40c",""))}</td>
+    <td style="color:var(--ink-dim)">${esc(r.type)}</td>
+    <td class="pr ${prCls(r.ms)}">${fmtPR(r.ms)}</td>
+    <td class="pr ${prCls(r.std)}">${fmtPR(r.std)}</td>
+    <td class="pr ${prCls(r.skew)}">${fmtPR(r.skew)}</td>
+    <td>${covCell(r)}</td>
+    <td><span class="pill ${r.health}">${r.health}</span></td></tr>`).join("");
+  return `
+  <div class="stagger">
+    <div class="sectit"><h2>Results</h2><span class="tag">${esc(b.name)} · target ${TARGET}% pass</span><span class="rule"></span></div>
+    ${healthBanner(sig.concat(mom))}
+    <div class="sectit"><h2 style="font-size:11px;color:var(--cyan)">Sigma</h2><span class="tag">relative-error OR CI-bounds · +Waiver1 = CI&nbsp;+6%</span><span class="rule"></span></div>
+    <div class="tblwrap"><table>
+      <tr><th>Corner</th><th>Type</th><th>Early Base</th><th>Early +W1</th><th>Late Base</th><th>Late +W1</th><th>Coverage</th><th>Health</th></tr>
+      ${sigRows}</table></div>
+    <div style="height:22px"></div>
+    <div class="sectit"><h2 style="font-size:11px;color:var(--mag)">Moments</h2><span class="tag">from FMC data · meanshift / std / skew</span><span class="rule"></span></div>
+    <div class="tblwrap"><table>
+      <tr><th>Corner</th><th>Type</th><th>Meanshift</th><th>Std</th><th>Skew</th><th>Coverage</th><th>Health</th></tr>
+      ${momRows||`<tr><td colspan="7" class="empty">no moments data</td></tr>`}</table></div>
+  </div>`;
+}
+
+function batchScore(b){ // representative number for history tiles: mean late-sigma base over covered, OK rows
+  const ok=b.sigma.filter(r=>r.health!=="NO_DATA"&&r.lBase!=null);
+  if(!ok.length) return null;
+  return ok.reduce((a,r)=>a+r.lBase,0)/ok.length;
+}
+function viewHistory(){
+  const rows=DATA.batches.map(b=>{
+    const sc=batchScore(b); const worst=b.sigma.some(r=>r.health==="NO_DATA")?"NO_DATA":b.sigma.some(r=>r.health==="LOW_COVERAGE")?"LOW_COVERAGE":"OK";
+    const cls=sc==null?"bad":sc>=95?"good":sc>=90?"warn":"bad";
+    return `<div class="batchrow ${state.compare.has(b.id)?"sel":""}" onclick="toggleCmp('${b.id}')">
+      <div class="cbox">${state.compare.has(b.id)?"✓":""}</div>
+      <div><div class="nm">${esc(b.name)}</div><div class="meta">${esc(b.when)} · ${esc(b.recipe)} · ${b.sigma.length} corner×type</div></div>
+      <div><div class="mini">Vendor</div><div class="mv" style="font-size:13px">${esc(b.vendor)}</div></div>
+      <div><div class="mini">Mean Late σ</div><div class="mv ${cls==='good'?'':''}" style="color:var(--${cls==='good'?'phos':cls==='warn'?'amber':'red'})">${sc==null?"—":sc.toFixed(1)+"%"}</div></div>
+      <div><div class="mini">Health</div><div><span class="pill ${worst}">${worst}</span></div></div>
+      <div><div class="mini">Stages</div><div class="mv" style="font-size:13px;color:var(--ink-dim)">${b.stages.filter(s=>s.status==='passed').length}/${b.stages.length}</div></div>
+      <button class="btn" onclick="event.stopPropagation();openBatch('${b.id}')">Open</button>
+    </div>`;}).join("");
+  return `<div class="stagger">
+    <div class="sectit"><h2>History</h2><span class="tag">every batch persists — select 2+ to compare recipes</span><span class="rule"></span></div>
+    ${rows}
+    <div class="runbar"><button class="btn primary" onclick="go('compare')">⇄ Compare selected (${state.compare.size})</button>
+      <span class="hint">tip: tick boxes, then compare</span></div>
+  </div>`;
+}
+
+function viewCompare(){
+  const ids=[...state.compare]; const bs=ids.map(id=>DATA.batches.find(b=>b.id===id)).filter(Boolean);
+  if(bs.length<2) return `<div class="stagger"><div class="sectit"><h2>Compare</h2><span class="rule"></span></div>
+    <div class="empty">Select at least two batches in <b style="color:var(--phos)">History</b> to compare recipes side-by-side.</div></div>`;
+  // align by corner+type on Late-sigma base
+  const keys=[...new Set(bs.flatMap(b=>b.sigma.map(r=>r.corner+"|"+r.type)))];
+  const head=`<th>Corner · Type</th>`+bs.map(b=>`<th>${esc(b.version)}·${esc(b.vendor)}</th>`).join("")+`<th>Δ vs first</th>`;
+  const body=keys.map(k=>{
+    const [c,t]=k.split("|"); const vals=bs.map(b=>{const r=b.sigma.find(x=>x.corner===c&&x.type===t); return r?(r.health==="NO_DATA"?null:r.lBase):undefined;});
+    const base=vals[0]; const last=vals[vals.length-1];
+    let d="—"; if(base!=null&&last!=null){const dv=last-base; d=`<span class="delta ${dv>=0?"up":"down"}">${dv>=0?"+":""}${dv.toFixed(1)}</span>`;}
+    return `<tr><td class="corner">${esc(c.replace("ssgnp_","").replace("_m40c",""))} · ${esc(t)}</td>`+
+      vals.map(v=>`<td class="pr ${prCls(v)}">${v===undefined?"<span style='color:var(--ink-faint)'>n/a</span>":fmtPR(v)}</td>`).join("")+
+      `<td>${d}</td></tr>`;}).join("");
+  return `<div class="stagger">
+    <div class="sectit"><h2>Compare</h2><span class="tag">Late-sigma Base_PR across ${bs.length} recipes</span><span class="rule"></span></div>
+    <div class="tblwrap"><table><tr>${head}</tr>${body}</table></div>
+    <div class="runbar"><span class="hint">switch the comparison metric, export, and overlay charts arrive with the backend wiring</span></div>
+  </div>`;
+}
+
+/* ====================== RENDER / ROUTING ====================== */
+const VIEWS={setup:viewSetup,pipeline:viewPipeline,results:viewResults,history:()=>viewHistory(),compare:()=>viewCompare()};
+function render(){
+  const b=batch();
+  $("#crumbBatch").textContent=b.name;
+  const fn=VIEWS[state.view];
+  $("#content").innerHTML = (state.view==="history"||state.view==="compare")? fn() : fn(b);
+  document.querySelectorAll(".navItem").forEach(n=>n.classList.toggle("active",n.dataset.view===state.view));
+  // wire chips (visual toggle only in prototype)
+  $("#content").querySelectorAll(".chip").forEach(ch=>ch.onclick=()=>ch.classList.toggle("on"));
+}
+function go(v){state.view=v; render();}
+function openBatch(id){state.batchId=id; $("#batchPick").value=id; go("results");}
+function toggleCmp(id){state.compare.has(id)?state.compare.delete(id):state.compare.add(id); render();}
+
+function init(){
+  const sel=$("#batchPick");
+  sel.innerHTML=DATA.batches.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join("");
+  sel.value=state.batchId;
+  sel.onchange=()=>{state.batchId=sel.value; render();};
+  document.querySelectorAll(".navItem").forEach(n=>n.onclick=()=>go(n.dataset.view));
+  render();
+}
+init();
+</script>
+</body>
+</html>
