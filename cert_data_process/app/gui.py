@@ -22,7 +22,7 @@ STAGES = [
     ("get_pr_moments", "Moments PR"),
     ("generate_pr_web_app", "Dashboard"),
 ]
-HEALTH_BG = {"OK": "#e8f6ec", "LOW_COVERAGE": "#fdf2e0", "NO_DATA": "#fdecec"}
+HEALTH_BG = {"OK": "#e8f6ec", "LOW_COVERAGE": "#fdf2e0", "NO_DATA": "#fdecec", "UNKNOWN": "#eef2f7"}
 STATE_FG = {
     "passed": "#15803d", "ok": "#15803d", "running": "#2563eb",
     "partial": "#b45309", "queued": "#8a94a6", "pending": "#aab2c0",
@@ -55,9 +55,10 @@ def corner_suggestions(index: list) -> list:
 
 
 def coverage_text(row: dict) -> str:
-    total, covered = row.get("total", 0), row.get("covered", 0)
-    pct = (covered / total * 100) if total else 0.0
-    return f"{covered}/{total} ({pct:.0f}%)"
+    total, covered = row.get("total"), row.get("covered")
+    if not total:  # None (unknown / old table) or 0
+        return "—" if total is None else "0/0"
+    return f"{covered}/{total} ({covered / total * 100:.0f}%)"
 
 
 # ---------------- Tk app ----------------

@@ -51,36 +51,43 @@ def _rows_as_dicts(path: Path) -> list[dict[str, str]]:
     return [dict(zip(header, r)) for r in rows]
 
 
+def _coverage(d: dict) -> dict:
+    """Coverage fields, honest about absence: a table without the coverage
+    columns is UNKNOWN (old format), NOT a fabricated NO_DATA over 0 arcs."""
+    if "Total_Arcs" not in d and "Data_Health" not in d:
+        return {"total": None, "covered": None, "health": "UNKNOWN"}
+    return {"total": _int(d.get("Total_Arcs")), "covered": _int(d.get("Covered")),
+            "health": d.get("Data_Health") or "UNKNOWN"}
+
+
 def build_sigma_rows(out: Path) -> list[dict[str, Any]]:
     rows = []
     for d in _rows_as_dicts(out / "pr" / "sigma" / "sigma_PR_table_with_waivers.csv"):
-        rows.append({
+        row = {
             "corner": d.get("Corner", ""),
             "type": d.get("Type", ""),
             "eBase": _num(d.get("Early_Sigma_Base_PR")),
             "eW1": _num(d.get("Early_Sigma_PR_with_Waiver1")),
             "lBase": _num(d.get("Late_Sigma_Base_PR")),
             "lW1": _num(d.get("Late_Sigma_PR_with_Waiver1")),
-            "total": _int(d.get("Total_Arcs")),
-            "covered": _int(d.get("Covered")),
-            "health": d.get("Data_Health", "NO_DATA"),
-        })
+        }
+        row.update(_coverage(d))
+        rows.append(row)
     return rows
 
 
 def build_moments_rows(out: Path) -> list[dict[str, Any]]:
     rows = []
     for d in _rows_as_dicts(out / "pr" / "moments" / "moments_PR_table.csv"):
-        rows.append({
+        row = {
             "corner": d.get("Corner", ""),
             "type": d.get("Type", ""),
             "ms": _num(d.get("Meanshift_Base_PR")),
             "std": _num(d.get("Std_Base_PR")),
             "skew": _num(d.get("Skew_Base_PR")),
-            "total": _int(d.get("Total_Arcs")),
-            "covered": _int(d.get("Covered")),
-            "health": d.get("Data_Health", "NO_DATA"),
-        })
+        }
+        row.update(_coverage(d))
+        rows.append(row)
     return rows
 
 

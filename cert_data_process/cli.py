@@ -14,7 +14,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Optional
 
-from . import __version__
+try:  # package normally defines this; be resilient to namespace-package resolution on some hosts
+    from . import __version__
+except ImportError:  # pragma: no cover
+    __version__ = "0.0.0"
 from .config import SUPPORTED_TYPES, SUPPORTED_VENDORS, build_config, parse_csv
 from .stages.fmc_combine_data import run_fmc_combine_data
 from .stages.full_mc_parse_and_normalize import run_full_mc_parse_and_normalize

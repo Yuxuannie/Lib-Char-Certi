@@ -32,7 +32,8 @@ def test_corner_suggestions_dedup_sorted():
 
 def test_coverage_text():
     assert gui.coverage_text({"total": 1180, "covered": 1180}) == "1180/1180 (100%)"
-    assert gui.coverage_text({"total": 0, "covered": 0}) == "0/0 (0%)"
+    assert gui.coverage_text({"total": 0, "covered": 0}) == "0/0"
+    assert gui.coverage_text({"total": None, "covered": None}) == "—"  # unknown / old table
     assert gui.coverage_text({"total": 1261, "covered": 1201}).startswith("1201/1261")
 
 
