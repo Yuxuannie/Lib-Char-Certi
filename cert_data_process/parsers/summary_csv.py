@@ -10,22 +10,39 @@ from .arc_dir_name import parse_arc_info
 
 
 def _summary_number(path: Path) -> int:
-    match = re.search(r"\d+", path.name)
-    if not match:
-        return -1
-    return int(match.group())
+    """Rerun index = trailing integer in the name (summary.2.csv -> 2,
+    summary.10.csv -> 10). The latest rerun has the largest number."""
+
+    nums = re.findall(r"\d+", path.name)
+    return int(nums[-1]) if nums else -1
+
+
+def _is_summary_csv(path: Path) -> bool:
+    name = path.name.lower()
+    return path.is_file() and name.startswith("summary") and name.endswith(".csv")
+
+
+def _find_summary_csvs(arc_dir: Path) -> list[Path]:
+    """Find summary*.csv (case-insensitive). Prefer files directly in the arc
+    dir; if none, recurse into rerun sub-folders. N2P v0.9 decks name them
+    summary.1.csv / summary.2.csv (largest N = latest) and may nest reruns."""
+
+    top = [p for p in arc_dir.iterdir() if _is_summary_csv(p)]
+    if top:
+        return top
+    return [p for p in arc_dir.rglob("*") if _is_summary_csv(p)]
 
 
 def parse_summary_csv(arc_dir: Path, arc_dir_name: str, type_info: str) -> tuple[Optional[list[Any]], Optional[dict]]:
     """Parse one hold/mpw arc summary CSV into a legacy report row."""
 
-    csv_files = [path for path in arc_dir.iterdir() if path.name.startswith("summary") and path.name.endswith(".csv")]
+    csv_files = _find_summary_csvs(arc_dir)
     if not csv_files:
         return None, {
             "arc_dir": arc_dir_name,
             "input_path": str(arc_dir),
             "reason": "missing_summary_csv",
-            "detail": "No summary*.csv files found",
+            "detail": "No summary*.csv found in arc dir or its sub-folders",
         }
 
     csv_file_path = max(csv_files, key=_summary_number)
