@@ -6,3 +6,5 @@ build/
 dist/
 .omc/
 .DS_Store
+*_check_*.log
+sigma_waiver_check_*.log

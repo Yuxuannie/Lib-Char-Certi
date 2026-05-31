@@ -45,7 +45,8 @@ PLANNED_STAGE_STATUS = (
         "stage": "full_mc_parse_and_normalize",
         "pipeline": "moments",
         "implemented": False,
-        "planned_pr": "PR 3",
+        "planned_pr": "removed",
+        "note": "Full MC removed (G4); moments now derived from FMC data.",
     },
     {
         "stage": "lib_join",
@@ -69,8 +70,9 @@ PLANNED_STAGE_STATUS = (
     {
         "stage": "get_pr_moments",
         "pipeline": "moments",
-        "implemented": False,
+        "implemented": True,
         "planned_pr": "PR 7",
+        "note": "Moments (meanshift/std/skew) Base_PR + Waiver1 from FMC RPT; no Full MC.",
     },
 )
 
@@ -275,15 +277,8 @@ def run(argv: Optional[Iterable[str]] = None) -> int:
         fmc_result = run_fmc_combine_data(config)
         failed = _record_stage(stage_execution, compatibility_stage_reports, fmc_result) or failed
 
-    if config.run_moments:
-        skipped = {
-            "stage": "full_mc_parse_and_normalize",
-            "pipeline": "moments",
-            "status": "skipped",
-            "reason": "full_mc_deferred_use_fmc_for_sigma_and_moments",
-        }
-        stage_execution.append(skipped)
-        _announce_stage(skipped)
+    # Full MC is removed (G4): moments are derived from the FMC data below, so
+    # there is no separate full_mc parse/normalize stage.
 
     if config.run_sigma:
         print("[lib_join_sigma] running")
@@ -294,6 +289,11 @@ def run(argv: Optional[Iterable[str]] = None) -> int:
         print("[build_pr_table] running")
         sigma_pr_result = run_build_pr_table(config)
         failed = _record_stage(stage_execution, compatibility_stage_reports, sigma_pr_result) or failed
+
+        print("[get_pr_moments] running")
+        from .stages.get_pr_moments import run_get_pr_moments
+        moments_pr_result = run_get_pr_moments(config)
+        failed = _record_stage(stage_execution, compatibility_stage_reports, moments_pr_result) or failed
     else:
         skipped = {
             "stage": "build_pr_table",

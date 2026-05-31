@@ -170,11 +170,13 @@ def test_sigma_only_pipeline_runs_fmc_combine_data(tmp_path):
     assert (output_dir / "normalized" / "fmc" / "fmc_result_n2p_v1p0_ssgnp_0p450v_m40c_hold.csv").is_file()
 
 
-def test_moments_only_pipeline_deferred_full_mc_by_default(tmp_path):
+def test_moments_only_without_fmc_is_skipped(tmp_path):
+    # G4: Full MC is removed; moments are derived from FMC data. A run without
+    # an FMC golden dir therefore cannot produce sigma OR moments, and the
+    # pipeline is skipped with a clear reason (no silent full_mc stage).
     _, _, run_manifest, _ = _run_dummy(tmp_path, fmc=False, full_mc=True, enable_full_mc=False)
 
-    assert run_manifest["enabled_pipelines"] == ["moments"]
     assert run_manifest["config"]["run_sigma"] is False
-    assert run_manifest["config"]["run_moments"] is True
-    assert run_manifest["stage_execution"][0]["stage"] == "full_mc_parse_and_normalize"
+    assert run_manifest["stage_execution"][0]["stage"] == "build_pr_table"
     assert run_manifest["stage_execution"][0]["status"] == "skipped"
+    assert run_manifest["stage_execution"][0]["reason"] == "requires_fmc_inputs"
