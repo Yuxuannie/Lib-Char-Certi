@@ -80,10 +80,13 @@ def serve(runs_root: Any, port: int = 8765, host: str = "127.0.0.1",
           batch_concurrency: int = 2, liberate_budget: int = 4):
     from .executor import JobManager
 
+    import socket
+
     runs_root = runs.resolve_runs_root(runs_root)
     manager = JobManager(runs_root, batch_concurrency, liberate_budget)
     httpd = ThreadingHTTPServer((host, port), make_handler(manager, runs_root))
-    print(f"CERTI console: http://{host}:{port}")
+    print(f"CERTI console: http://localhost:{port}")
+    print(f"  open this in a browser ON THE SAME HOST (this host: {socket.gethostname()})")
     print(f"  runs_root={runs_root}  batch_concurrency={batch_concurrency}  liberate_budget={liberate_budget}")
     print("  Ctrl-C to stop.")
     try:
