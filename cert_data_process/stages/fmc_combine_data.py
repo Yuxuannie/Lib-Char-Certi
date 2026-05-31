@@ -1,12 +1,9 @@
 """FMC Combine_data stage — parse FMC golden outputs into normalized CSVs.
 
-Byte-identical compatibility with legacy `2-data_process/Combine_data/
-calculate.py` assumes:
-- Python 3.9+ runtime
-- csv.writer default excel dialect (lineterminator='\r\n')
-- Python str(float) numeric representation
-
-Cross-major-version byte equivalence (e.g., Python 4.x) is not guaranteed.
+This mirrors the legacy `2-data_process/Combine_data/calculate.py` extraction
+logic. Byte-for-byte output equality with the legacy flow is NOT a goal; the
+contract is that pass-rate results are correct and reasonable. Numeric
+representation may differ across Python versions/platforms.
 """
 
 from __future__ import annotations

@@ -52,23 +52,61 @@ def _build_liberate_shell_cmd(tcl: Path, script: Path, lib_file: Path, csv_path:
     )
 
 
-def _pick_mode_and_lib(glob_libs: list[Path], csv_name: str) -> tuple[str, Path | None]:
+def _corner_for_csv(csv_name: str, corners: tuple[str, ...]) -> str | None:
+    """Return the requested corner whose name is embedded in this CSV filename.
+
+    Prefer the longest match so a corner that is a substring of another does not
+    shadow the more specific one.
+    """
+
+    matches = [c for c in corners if c in csv_name]
+    if not matches:
+        return None
+    return max(matches, key=len)
+
+
+def _mode_for_csv(csv_name: str) -> str:
     if csv_name.endswith("_hold.csv"):
-        for lf in glob_libs:
-            if lf.name.endswith(".cons.lib"):
-                return "Hold", lf
-        return "Hold", None
+        return "Hold"
     if csv_name.endswith("_delay.csv"):
-        for lf in glob_libs:
-            if "non_cons.lib" in lf.name:
-                return "Delay", lf
-        return "Delay", None
+        return "Delay"
     if csv_name.endswith("_slew.csv"):
-        for lf in glob_libs:
-            if "non_cons.lib" in lf.name:
-                return "Slew", lf
-        return "Slew", None
-    return "Unknown", None
+        return "Slew"
+    return "Unknown"
+
+
+def _pick_mode_and_lib(
+    glob_libs: list[Path], csv_name: str, corner: str | None
+) -> tuple[str, Path | None]:
+    """Select the lib matching BOTH the csv's corner and its timing type.
+
+    The lib MUST belong to the same corner as the FMC golden data. Joining a
+    corner's data against another corner's lib silently produces meaningless
+    pass rates (observed: ~44% nominal mismatch when 0p465v data was compared to
+    the 0p450v lib). Corner matching is therefore mandatory: when no lib matches
+    the corner we return ``None`` so the caller records a loud failure instead of
+    falling back to an unrelated lib.
+    """
+
+    mode = _mode_for_csv(csv_name)
+    if mode == "Unknown" or corner is None:
+        return mode, None
+
+    corner_libs = [lf for lf in glob_libs if corner in lf.name]
+    if not corner_libs:
+        return mode, None
+
+    if mode == "Hold":
+        for lf in corner_libs:
+            if lf.name.endswith(".cons.lib"):
+                return mode, lf
+        return mode, None
+
+    # Delay / Slew use the non-constraint lib.
+    for lf in corner_libs:
+        if "non_cons.lib" in lf.name:
+            return mode, lf
+    return mode, None
 
 
 def run_lib_join_sigma(config: CertDataProcessConfig) -> SigmaLibJoinResult:
@@ -150,14 +188,63 @@ def run_lib_join_sigma(config: CertDataProcessConfig) -> SigmaLibJoinResult:
         "",
     ]
 
+    requested_corners = tuple(config.corners)
+    libs_have_corner = {c: any(c in lf.name for lf in lib_files) for c in requested_corners}
+    log_lines.append("lib_corner_coverage:")
+    for c in requested_corners:
+        log_lines.append(f"  corner={c} lib_present={libs_have_corner[c]}")
+    missing_corner_libs = [c for c in requested_corners if not libs_have_corner[c]]
+    if missing_corner_libs:
+        log_lines.append(
+            "WARNING: no lib in --lib-dir for corner(s): " + ", ".join(missing_corner_libs)
+        )
+        log_lines.append(
+            "  -> those corners will be reported as failures, NOT joined against a wrong-corner lib."
+        )
+    log_lines.append("")
+
     for csv_path in csv_files:
-        mode, lib_file = _pick_mode_and_lib(lib_files, csv_path.name)
-        if mode == "Unknown" or lib_file is None:
+        corner = _corner_for_csv(csv_path.name, requested_corners)
+        mode = _mode_for_csv(csv_path.name)
+
+        if corner is None:
             failures.append({
                 "csv": str(csv_path),
-                "reason": "no_matching_lib",
-                "detail": f"No matching lib for mode={mode}",
+                "reason": "unrecognized_corner",
+                "detail": f"CSV name matches none of the requested corners: {list(requested_corners)}",
             })
+            continue
+        if mode == "Unknown":
+            failures.append({
+                "csv": str(csv_path),
+                "corner": corner,
+                "reason": "unknown_type",
+                "detail": "CSV name does not end with _delay/_slew/_hold",
+            })
+            continue
+
+        _, lib_file = _pick_mode_and_lib(lib_files, csv_path.name, corner)
+        if lib_file is None:
+            if not libs_have_corner.get(corner, False):
+                reason = "no_lib_for_corner"
+                detail = (
+                    f"No .lib in --lib-dir matches corner '{corner}'. Provide this corner's "
+                    f"lib; data was NOT joined against a wrong-corner lib (silent mismatch avoided)."
+                )
+            else:
+                reason = "no_lib_for_type"
+                detail = (
+                    f"Corner '{corner}' lib present but no {mode} lib "
+                    f"({'.cons.lib' if mode == 'Hold' else 'non_cons.lib'}) found."
+                )
+            failures.append({
+                "csv": str(csv_path),
+                "corner": corner,
+                "mode": mode,
+                "reason": reason,
+                "detail": detail,
+            })
+            log_lines.append(f"FAIL csv={csv_path.name} corner={corner} mode={mode} reason={reason}")
             continue
 
         csv_path = csv_path.resolve()
@@ -235,7 +322,8 @@ def run_lib_join_sigma(config: CertDataProcessConfig) -> SigmaLibJoinResult:
 
     run_log.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
 
-    if processed and failures and len(failures) < len(processed):
+    has_partial_success = bool(processed and failures)
+    if has_partial_success:
         status = "partial"
     elif failures:
         status = "failed"
@@ -251,7 +339,7 @@ def run_lib_join_sigma(config: CertDataProcessConfig) -> SigmaLibJoinResult:
         "duration_seconds": round(time.monotonic() - t0, 6),
         "processed": processed,
         "failures": failures,
-        "failure_summary": {"count": len(failures), "has_partial_success": bool(processed and failures and len(failures) < len(processed))},
+        "failure_summary": {"count": len(failures), "has_partial_success": has_partial_success},
         "log_file": str(run_log),
         "output_dir": str(combined_dir),
     }

@@ -127,9 +127,6 @@ def check_pass_with_waivers(row, type_name, param_name, mc_prefix='MC', lib_pref
     arc_name = row['Arc']
     logging.debug(f"Checking {param_name} for Arc: {arc_name}")
 
-    # Extract necessary values
-    rel_pin_slew = row['rel_pin_slew']
-
     # Auto-detect lib prefix if not provided (for sigma files)
     if lib_prefix is None:
         lib_prefix = detect_vendor_columns(pd.DataFrame([row]))
@@ -142,84 +139,68 @@ def check_pass_with_waivers(row, type_name, param_name, mc_prefix='MC', lib_pref
         # Get CI bounds
         mc_ci_lb = row[f"{mc_prefix}_{param_name}_LB"]
         mc_ci_ub = row[f"{mc_prefix}_{param_name}_UB"]
-
-        # Get or calculate errors
-        if f"{lib_prefix}_{param_name}_Dif" in row:
-            abs_err = row[f"{lib_prefix}_{param_name}_Dif"]  # Pre-calculated
-        else:
-            abs_err = lib_value - mc_value  # Calculate
-
-        # Calculate proper relative error using max denominator method (aligned with original sigma script)
-        lib_nominal = row.get(f'{lib_prefix}_Nominal', None)
-        if lib_nominal is not None:
-            max_denom = max(abs(lib_nominal), abs(mc_value))
-            rel_err = (lib_value - mc_value) / max_denom
-            logging.debug(f"  Using max_denom method: max({abs(lib_nominal):.1f}, {abs(mc_value):.1f}) = {max_denom:.1f}")
-        else:
-            rel_err = (lib_value - mc_value) / abs(mc_value) if mc_value != 0 else 0
-            logging.debug(f"  Using fallback method (no nominal found)")
-
-        logging.debug(f"  rel_pin_slew: {rel_pin_slew}")
-        logging.debug(f"  {mc_prefix}_{param_name}: {mc_value}")
-        logging.debug(f"  {lib_prefix}_{param_name}: {lib_value}")
-        logging.debug(f"  MC CI: [{mc_ci_lb}, {mc_ci_ub}]")
-        logging.debug(f"  abs_err: {abs_err}, rel_err: {rel_err}")
-
     except KeyError as e:
         logging.error(f"Missing column for {param_name}: {e}")
         return {
+            'covered': False,
             'base_pass': False, 'pass_reason': 'missing_data', 'waiver1_ci_enlarged': False,
             'error_direction': 'unknown', 'final_status': 'Fail',
             'abs_err': None, 'rel_err': None, 'mc_value': None, 'lib_value': None,
             'mc_ci_lb': None, 'mc_ci_ub': None
         }
 
-    # Set thresholds based on type and parameter
+    # The lib may not cover every FMC golden arc. Uncovered arcs arrive here with
+    # a NaN lib value; they are REPORTED and EXCLUDED from the pass-rate
+    # denominator (not counted as a failure).
+    if pd.isna(lib_value) or pd.isna(mc_value):
+        return {
+            'covered': False,
+            'base_pass': False, 'pass_reason': 'no_lib_data', 'waiver1_ci_enlarged': False,
+            'error_direction': 'unknown', 'final_status': 'No_Lib',
+            'abs_err': None, 'rel_err': None, 'mc_value': mc_value, 'lib_value': lib_value,
+            'mc_ci_lb': mc_ci_lb, 'mc_ci_ub': mc_ci_ub
+        }
+
+    # abs_err kept for reference only; it no longer participates in pass/fail.
+    abs_err = lib_value - mc_value
+
+    # Relative error using max-denominator method (aligned with original sigma script).
+    lib_nominal = row.get(f'{lib_prefix}_Nominal', None)
+    if lib_nominal is not None and not pd.isna(lib_nominal):
+        max_denom = max(abs(lib_nominal), abs(mc_value))
+        rel_err = (lib_value - mc_value) / max_denom if max_denom != 0 else 0
+    else:
+        rel_err = (lib_value - mc_value) / abs(mc_value) if mc_value != 0 else 0
+
+    logging.debug(f"  {mc_prefix}_{param_name}: {mc_value}; {lib_prefix}_{param_name}: {lib_value}")
+    logging.debug(f"  MC CI: [{mc_ci_lb}, {mc_ci_ub}]; rel_err: {rel_err}")
+
+    # Set relative-error threshold based on type and parameter.
+    # (Absolute-error / slew-based checking has been removed by request: pass is
+    # now relative-error OR CI-bounds only.)
     if type_name == 'delay':
         if param_name in ['Early_Sigma', 'Late_Sigma']:
             rel_threshold = 0.03  # 3% for sigma
-            ps_value = 1
-            slew_multiplier = 0.005
         elif param_name == 'Meanshift':
             rel_threshold = 0.01  # 1% for moments meanshift
-            ps_value = 1
-            slew_multiplier = 0.005
         elif param_name == 'Std':
             rel_threshold = 0.02  # 2% for moments std
-            ps_value = 1
-            slew_multiplier = 0.005
         else:  # Skew
             rel_threshold = 0.05  # 5% for moments skew
-            ps_value = 1
-            slew_multiplier = 0.005
     elif type_name == 'slew':
         if param_name in ['Early_Sigma', 'Late_Sigma']:
             rel_threshold = 0.06  # 6% for sigma
-            ps_value = 2
-            slew_multiplier = 0.01
         elif param_name == 'Meanshift':
             rel_threshold = 0.02  # 2% for moments meanshift
-            ps_value = 1  # 1ps for slew in moments script
-            slew_multiplier = 0.005
         elif param_name == 'Std':
             rel_threshold = 0.04  # 4% for moments std
-            ps_value = 1
-            slew_multiplier = 0.005
         else:  # Skew
             rel_threshold = 0.10  # 10% for moments skew
-            ps_value = 1
-            slew_multiplier = 0.005
     else:  # hold
         rel_threshold = 0.03  # 3% for hold
-        ps_value = 10
-        slew_multiplier = 0.005
 
-    # **CHECK 1: Error-Based Pass (rel OR abs)**
+    # **CHECK 1: Relative-error Pass**
     rel_pass = abs(rel_err) <= rel_threshold
-    abs_threshold = max(slew_multiplier * rel_pin_slew, ps_value * 1e-12)
-    abs_pass = abs(abs_err) <= abs_threshold
-
-    error_based_pass = rel_pass or abs_pass
 
     # **CHECK 2: CI Bounds Pass**
     ci_lb = min(mc_ci_lb, mc_ci_ub)
@@ -227,20 +208,11 @@ def check_pass_with_waivers(row, type_name, param_name, mc_prefix='MC', lib_pref
     ci_bounds_pass = (ci_lb <= lib_value <= ci_ub)
 
     # **BASE PASS = Check 1 OR Check 2**
-    base_pass = error_based_pass or ci_bounds_pass
+    base_pass = rel_pass or ci_bounds_pass
 
     # Determine pass reason
     if base_pass:
-        if rel_pass and abs_pass:
-            pass_reason = "both"
-        elif rel_pass:
-            pass_reason = "rel_pass"
-        elif abs_pass:
-            pass_reason = "abs_pass"
-        elif ci_bounds_pass:
-            pass_reason = "ci_bounds"
-        else:
-            pass_reason = "unknown"
+        pass_reason = "rel_pass" if rel_pass else "ci_bounds"
     else:
         pass_reason = "fail"
 
@@ -265,6 +237,7 @@ def check_pass_with_waivers(row, type_name, param_name, mc_prefix='MC', lib_pref
     logging.debug(f"  Results for {param_name}: base_pass={base_pass}, waiver1={waiver1_ci_enlarged}, error_dir={error_direction}, final={final_status}")
 
     return {
+        'covered': True,
         'base_pass': base_pass,
         'pass_reason': pass_reason,
         'waiver1_ci_enlarged': waiver1_ci_enlarged,
@@ -349,8 +322,8 @@ def process_sigma_file_with_waivers(file_path, type_name):
         vendor_prefix = detect_vendor_columns(df)
         logging.info(f"Using vendor prefix: {vendor_prefix}")
 
-        # Check if required columns exist
-        required_columns = ['Arc', 'rel_pin_slew']
+        # Check if required columns exist (rel_pin_slew no longer needed: abs/slew check removed)
+        required_columns = ['Arc']
 
         # Determine which sigma parameters to check based on type
         if type_name in ['delay', 'slew']:
@@ -361,7 +334,6 @@ def process_sigma_file_with_waivers(file_path, type_name):
         for param in sigma_params:
             required_columns.extend([
                 f'MC_{param}', f'{vendor_prefix}_{param}',
-                f'{vendor_prefix}_{param}_Dif', f'{vendor_prefix}_{param}_Rel',
                 f'MC_{param}_LB', f'MC_{param}_UB'  # CI bounds for enlargement
             ])
 
@@ -405,10 +377,12 @@ def process_sigma_file_with_waivers(file_path, type_name):
                 'optimistic_total': 0,
                 'pessimistic_pass': 0,
                 'pass_with_both_waivers': 0,
-                'total_arcs': 0,
+                'total_arcs': 0,        # covered arcs only (lib value available)
+                'uncovered': 0,         # FMC golden arcs the lib does not cover
                 'optimistic_errors': 0,
                 'pessimistic_errors': 0
             }
+            uncovered_arcs = []
 
             for idx, row in df.iterrows():
                 arc_name = row['Arc']
@@ -437,13 +411,22 @@ def process_sigma_file_with_waivers(file_path, type_name):
                 mc_ci_ub_list.append(mc_ci_ub)
                 abs_err_list.append(abs_err)
                 rel_err_list.append(rel_err)
-                base_pass_list.append("Pass" if base_pass else "Fail")
                 pass_reason_list.append(pass_reason)
-                waiver1_ci_enlarged_list.append("Pass" if waiver1_ci_enlarged else "Fail")
                 error_direction_list.append(error_direction)
                 final_status_list.append(final_status)
 
-                # Update statistics
+                # Uncovered arc (lib has no value): report and EXCLUDE from pass rate.
+                if not waiver_results.get('covered', True):
+                    base_pass_list.append("N/A")
+                    waiver1_ci_enlarged_list.append("N/A")
+                    waiver_stats['uncovered'] += 1
+                    uncovered_arcs.append(arc_name)
+                    continue
+
+                base_pass_list.append("Pass" if base_pass else "Fail")
+                waiver1_ci_enlarged_list.append("Pass" if waiver1_ci_enlarged else "Fail")
+
+                # Update statistics (covered arcs only)
                 waiver_stats['total_arcs'] += 1
 
                 # Base pass rate
@@ -481,37 +464,48 @@ def process_sigma_file_with_waivers(file_path, type_name):
             result_df[f'{param}_Error_Direction'] = error_direction_list
             result_df[f'{param}_Final_Status'] = final_status_list
 
-            # Calculate 4 pass rates as per requirement (with 1-digit precision)
+            # Calculate 4 pass rates over COVERED arcs only (uncovered excluded).
             total_count = waiver_stats['total_arcs']
+            uncovered = waiver_stats['uncovered']
+            total_golden = total_count + uncovered
             if total_count > 0:
                 base_pr = (waiver_stats['base_pass'] / total_count) * 100
                 pr_with_waiver1 = (waiver_stats['pass_with_waiver1'] / total_count) * 100
                 pr_optimistic_only = (waiver_stats['optimistic_pass'] / waiver_stats['optimistic_total']) * 100 if waiver_stats['optimistic_total'] > 0 else 0
                 pr_with_both_waivers = (waiver_stats['pass_with_both_waivers'] / waiver_stats['optimistic_total']) * 100 if waiver_stats['optimistic_total'] > 0 else 0
+            else:
+                base_pr = pr_with_waiver1 = pr_optimistic_only = pr_with_both_waivers = 0
 
-                waiver_summary[param] = {
-                    'base_pr': base_pr,
-                    'pr_with_waiver1': pr_with_waiver1,
-                    'pr_optimistic_only': pr_optimistic_only,
-                    'pr_with_both_waivers': pr_with_both_waivers,
-                    'total_arcs': total_count,
-                    'optimistic_errors': waiver_stats['optimistic_errors'],
-                    'pessimistic_errors': waiver_stats['pessimistic_errors'],
-                    'optimistic_pass': waiver_stats['optimistic_pass'],
-                    'pessimistic_pass': waiver_stats['pessimistic_pass'],
-                    'pass_with_waiver1_count': waiver_stats['pass_with_waiver1'],
-                    'base_pass_count': waiver_stats['base_pass']
-                }
+            waiver_summary[param] = {
+                'base_pr': base_pr,
+                'pr_with_waiver1': pr_with_waiver1,
+                'pr_optimistic_only': pr_optimistic_only,
+                'pr_with_both_waivers': pr_with_both_waivers,
+                'total_arcs': total_count,
+                'uncovered': uncovered,
+                'total_golden': total_golden,
+                'optimistic_errors': waiver_stats['optimistic_errors'],
+                'pessimistic_errors': waiver_stats['pessimistic_errors'],
+                'optimistic_pass': waiver_stats['optimistic_pass'],
+                'pessimistic_pass': waiver_stats['pessimistic_pass'],
+                'pass_with_waiver1_count': waiver_stats['pass_with_waiver1'],
+                'base_pass_count': waiver_stats['base_pass']
+            }
 
-                # Log detailed waiver statistics (1 digit precision)
-                logging.info(f"  {param} Waiver Analysis:")
-                logging.info(f"    Total arcs: {total_count}")
+            # Log detailed waiver statistics (1 digit precision)
+            logging.info(f"  {param} Waiver Analysis:")
+            logging.info(f"    Golden arcs: {total_golden} | covered by lib: {total_count} | UNCOVERED: {uncovered}")
+            if uncovered:
+                logging.warning(f"    {uncovered} arc(s) in FMC golden have NO lib value (excluded from PR). Examples: {uncovered_arcs[:5]}")
+            if total_count > 0:
                 logging.info(f"    Optimistic errors (Lib < MC): {waiver_stats['optimistic_errors']} ({waiver_stats['optimistic_errors']/total_count*100:.1f}%)")
                 logging.info(f"    Pessimistic errors (Lib >= MC): {waiver_stats['pessimistic_errors']} ({waiver_stats['pessimistic_errors']/total_count*100:.1f}%)")
-                logging.info(f"    Base PR: {base_pr:.1f}%")
+                logging.info(f"    Base PR (covered): {base_pr:.1f}%")
                 logging.info(f"    PR with Waiver1 (CI enlarged): {pr_with_waiver1:.1f}%")
                 logging.info(f"    PR Optimistic Only: {pr_optimistic_only:.1f}%")
                 logging.info(f"    PR with Both Waivers: {pr_with_both_waivers:.1f}%")
+            else:
+                logging.warning(f"    No covered arcs for {param}; pass rate not computable.")
 
         # Save waiver summary for this file
         if hasattr(process_sigma_file_with_waivers, 'waiver_summaries'):

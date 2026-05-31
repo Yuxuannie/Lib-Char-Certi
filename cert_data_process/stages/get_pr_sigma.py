@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import time
 from dataclasses import dataclass
@@ -33,7 +34,9 @@ def run_build_pr_table(config: CertDataProcessConfig) -> PrTableResult:
     output_dir = config.output_dir.resolve()
     root_path = (output_dir / "combined" / "sigma").resolve()
     repo_root = Path(__file__).resolve().parents[2]
-    script = (repo_root / "2-data_process/get_PR/Sigma/check_sigma.py").resolve()
+    script = (repo_root / "2-data_process/get_PR/Sigma/check_sigma_with_waivers.py").resolve()
+    pr_dir = (output_dir / "pr" / "sigma").resolve()
+    pr_dir.mkdir(parents=True, exist_ok=True)
     cmd = [
         "python3",
         str(script),
@@ -140,7 +143,40 @@ def run_build_pr_table(config: CertDataProcessConfig) -> PrTableResult:
             f"result={'passed' if proc.returncode == 0 else 'failed'}",
         ]
     )
+    # Collect the PR deliverables into the dedicated pr/sigma directory so results
+    # are not buried among intermediate files in combined/sigma.
+    pr_deliverables = [
+        "sigma_PR_table_with_waivers.csv",
+        "sigma_waiver_summary_table.txt",
+        "optimistic_pessimistic_breakdown.txt",
+        "sigma_pass_rate_visualization.png",
+    ]
+    copied = []
+    for name in pr_deliverables:
+        src = root_path / name
+        if src.is_file():
+            dst = pr_dir / name
+            shutil.copy2(src, dst)
+            copied.append(str(dst))
+    log_lines.append("")
+    log_lines.append("pr_sigma_outputs:")
+    for c in copied:
+        log_lines.append(f"  {c}")
     run_log.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
+
+    # Surface the PR table on the terminal so the user does not have to dig in the log.
+    pr_table = pr_dir / "sigma_PR_table_with_waivers.csv"
+    print(f"[build_pr_table] PR outputs copied to: {pr_dir}")
+    if pr_table.is_file():
+        try:
+            text = pr_table.read_text(encoding="utf-8")
+            print("[build_pr_table] sigma_PR_table_with_waivers.csv:")
+            for line in text.splitlines():
+                print(f"    {line}")
+        except OSError:
+            pass
+    else:
+        print("[build_pr_table] WARNING: sigma_PR_table_with_waivers.csv not produced (see build_pr_table.log)")
 
     stage = {
         "stage": "build_pr_table",
@@ -153,8 +189,9 @@ def run_build_pr_table(config: CertDataProcessConfig) -> PrTableResult:
         "command": " ".join(cmd),
         "log_file": str(run_log),
         "outputs": {
-            "sigma_pr_table": str(root_path / "sigma_PR_table.csv"),
-            "sigma_pr_table_moments": str(root_path / "sigma_PR_table_moments.csv"),
+            "pr_dir": str(pr_dir),
+            "sigma_pr_table_with_waivers": str(pr_table),
+            "copied": copied,
         },
         "failures": [] if proc.returncode == 0 else [{"reason": "legacy_sigma_script_failed", "detail": "See build_pr_table.log"}],
     }
