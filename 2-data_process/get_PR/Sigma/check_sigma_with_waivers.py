@@ -492,20 +492,28 @@ def process_sigma_file_with_waivers(file_path, type_name):
                 'base_pass_count': waiver_stats['base_pass']
             }
 
-            # Log detailed waiver statistics (1 digit precision)
-            logging.info(f"  {param} Waiver Analysis:")
-            logging.info(f"    Golden arcs: {total_golden} | covered by lib: {total_count} | UNCOVERED: {uncovered}")
-            if uncovered:
-                logging.warning(f"    {uncovered} arc(s) in FMC golden have NO lib value (excluded from PR). Examples: {uncovered_arcs[:5]}")
+            # Data-health-aware logging (G2): make the coverage situation
+            # impossible to miss, so a high PR over few/zero arcs cannot mislead.
+            coverage_pct = (total_count / total_golden * 100) if total_golden else 0.0
+            logging.info(f"  {param} pass-rate analysis:")
+            logging.info(f"    Golden arcs: {total_golden} | covered by lib: {total_count} ({coverage_pct:.1f}%) | UNCOVERED: {uncovered}")
+            if total_count == 0:
+                logging.error(
+                    f"    DATA_HEALTH=NO_DATA: lib covers 0/{total_golden} {param} arcs. "
+                    f"Pass rate is NOT meaningful (no data to compare). Check the lib is correct/complete."
+                )
+            elif coverage_pct < 90.0:
+                logging.warning(
+                    f"    DATA_HEALTH=LOW_COVERAGE: lib covers only {total_count}/{total_golden} "
+                    f"({coverage_pct:.1f}%) {param} arcs. PR below is over covered arcs ONLY; "
+                    f"{uncovered} uncovered arc(s) excluded. Examples: {uncovered_arcs[:5]}"
+                )
+            elif uncovered:
+                logging.warning(f"    {uncovered} arc(s) uncovered by lib (excluded from PR). Examples: {uncovered_arcs[:5]}")
+
             if total_count > 0:
-                logging.info(f"    Optimistic errors (Lib < MC): {waiver_stats['optimistic_errors']} ({waiver_stats['optimistic_errors']/total_count*100:.1f}%)")
-                logging.info(f"    Pessimistic errors (Lib >= MC): {waiver_stats['pessimistic_errors']} ({waiver_stats['pessimistic_errors']/total_count*100:.1f}%)")
-                logging.info(f"    Base PR (covered): {base_pr:.1f}%")
-                logging.info(f"    PR with Waiver1 (CI enlarged): {pr_with_waiver1:.1f}%")
-                logging.info(f"    PR Optimistic Only: {pr_optimistic_only:.1f}%")
-                logging.info(f"    PR with Both Waivers: {pr_with_both_waivers:.1f}%")
-            else:
-                logging.warning(f"    No covered arcs for {param}; pass rate not computable.")
+                logging.info(f"    Base PR (over {total_count} covered arcs): {base_pr:.1f}%")
+                logging.info(f"    PR with Waiver1 (CI +6%): {pr_with_waiver1:.1f}%")
 
         # Save waiver summary for this file
         if hasattr(process_sigma_file_with_waivers, 'waiver_summaries'):
@@ -540,23 +548,19 @@ def generate_waiver_summary_table(results, root_path):
     """
     logging.info("Generating sigma waiver summary table with 4 pass rates")
 
-    # Create dataframes for each type
+    # Create dataframes for each type.
+    # G1: keep only Base_PR + PR_with_Waiver1 (optimistic columns removed).
+    # G2: every row carries coverage + Data_Health so a PR is never read without
+    #     its denominator (prevents "100% PR" over 0 real cells from misleading).
+    cov_cols = ['Total_Arcs', 'Covered', 'Uncovered', 'Coverage', 'Data_Health']
     delay_df = pd.DataFrame(columns=[
-        'Corner',
-        'Early_Sigma_Base_PR', 'Early_Sigma_PR_with_Waiver1', 'Early_Sigma_PR_Optimistic_Only', 'Early_Sigma_PR_with_Both_Waivers',
-        'Late_Sigma_Base_PR', 'Late_Sigma_PR_with_Waiver1', 'Late_Sigma_PR_Optimistic_Only', 'Late_Sigma_PR_with_Both_Waivers'
-    ])
-
+        'Corner', 'Early_Sigma_Base_PR', 'Early_Sigma_PR_with_Waiver1',
+        'Late_Sigma_Base_PR', 'Late_Sigma_PR_with_Waiver1'] + cov_cols)
     slew_df = pd.DataFrame(columns=[
-        'Corner',
-        'Early_Sigma_Base_PR', 'Early_Sigma_PR_with_Waiver1', 'Early_Sigma_PR_Optimistic_Only', 'Early_Sigma_PR_with_Both_Waivers',
-        'Late_Sigma_Base_PR', 'Late_Sigma_PR_with_Waiver1', 'Late_Sigma_PR_Optimistic_Only', 'Late_Sigma_PR_with_Both_Waivers'
-    ])
-
+        'Corner', 'Early_Sigma_Base_PR', 'Early_Sigma_PR_with_Waiver1',
+        'Late_Sigma_Base_PR', 'Late_Sigma_PR_with_Waiver1'] + cov_cols)
     hold_df = pd.DataFrame(columns=[
-        'Corner',
-        'Late_Sigma_Base_PR', 'Late_Sigma_PR_with_Waiver1', 'Late_Sigma_PR_Optimistic_Only', 'Late_Sigma_PR_with_Both_Waivers'
-    ])
+        'Corner', 'Late_Sigma_Base_PR', 'Late_Sigma_PR_with_Waiver1'] + cov_cols)
 
     # Extract corner name from file name (similar to existing function)
     def extract_corner_from_filename(file_name):
@@ -581,70 +585,72 @@ def generate_waiver_summary_table(results, root_path):
 
         return '_'.join(base_name.split('_')[:3])
 
+    def _coverage_fields(rates):
+        """Coverage is identical across params (same arcs); read from any present."""
+        for s in rates.values():
+            total = s.get('total_golden', 0)
+            covered = s.get('total_arcs', 0)
+            uncovered = s.get('uncovered', 0)
+            if covered == 0:
+                health = 'NO_DATA'
+            elif total > 0 and (covered / total) < 0.9:
+                health = 'LOW_COVERAGE'
+            else:
+                health = 'OK'
+            pct = f"{(covered / total * 100):.1f}%" if total > 0 else "0.0%"
+            return {'Total_Arcs': total, 'Covered': covered, 'Uncovered': uncovered,
+                    'Coverage': pct, 'Data_Health': health}
+        return {'Total_Arcs': 0, 'Covered': 0, 'Uncovered': 0, 'Coverage': '0.0%', 'Data_Health': 'NO_DATA'}
+
     # Fill the dataframes
     all_corners = set()
     all_types = set()
-
-    # Collect all corners and types
     for (file_name, type_name) in results.keys():
-        corner = extract_corner_from_filename(file_name)
-        all_corners.add(corner)
+        all_corners.add(extract_corner_from_filename(file_name))
         all_types.add(type_name)
 
     for corner in sorted(all_corners):
         for type_name in sorted(all_types):
-            # Find the matching file
             file_key = None
-            for (file_name, file_type), data in results.items():
+            for (file_name, file_type) in results:
                 if extract_corner_from_filename(file_name) == corner and file_type == type_name:
                     file_key = (file_name, file_type)
                     break
 
-            if file_key and file_key in results:
+            params = ['Early_Sigma', 'Late_Sigma'] if type_name in ('delay', 'slew') else ['Late_Sigma']
+            new_row = {'Corner': corner}
+            if file_key is not None:
                 rates = results[file_key]
-
-                new_row = {'Corner': corner}
-
-                if type_name in ['delay', 'slew']:
-                    for param in ['Early_Sigma', 'Late_Sigma']:
-                        if param in rates:
-                            new_row[f'{param}_Base_PR'] = f"{rates[param]['base_pr']:.1f}%"
-                            new_row[f'{param}_PR_with_Waiver1'] = f"{rates[param]['pr_with_waiver1']:.1f}%"
-                            new_row[f'{param}_PR_Optimistic_Only'] = f"{rates[param]['pr_optimistic_only']:.1f}%"
-                            new_row[f'{param}_PR_with_Both_Waivers'] = f"{rates[param]['pr_with_both_waivers']:.1f}%"
-                        else:
-                            new_row[f'{param}_Base_PR'] = "N/A"
-                            new_row[f'{param}_PR_with_Waiver1'] = "N/A"
-                            new_row[f'{param}_PR_Optimistic_Only'] = "N/A"
-                            new_row[f'{param}_PR_with_Both_Waivers'] = "N/A"
-                else:  # hold
-                    param = 'Late_Sigma'
+                for param in params:
                     if param in rates:
                         new_row[f'{param}_Base_PR'] = f"{rates[param]['base_pr']:.1f}%"
                         new_row[f'{param}_PR_with_Waiver1'] = f"{rates[param]['pr_with_waiver1']:.1f}%"
-                        new_row[f'{param}_PR_Optimistic_Only'] = f"{rates[param]['pr_optimistic_only']:.1f}%"
-                        new_row[f'{param}_PR_with_Both_Waivers'] = f"{rates[param]['pr_with_both_waivers']:.1f}%"
                     else:
                         new_row[f'{param}_Base_PR'] = "N/A"
                         new_row[f'{param}_PR_with_Waiver1'] = "N/A"
-                        new_row[f'{param}_PR_Optimistic_Only'] = "N/A"
-                        new_row[f'{param}_PR_with_Both_Waivers'] = "N/A"
+                new_row.update(_coverage_fields(rates))
+            else:
+                for param in params:
+                    new_row[f'{param}_Base_PR'] = "N/A"
+                    new_row[f'{param}_PR_with_Waiver1'] = "N/A"
+                new_row.update({'Total_Arcs': 0, 'Covered': 0, 'Uncovered': 0,
+                                'Coverage': '0.0%', 'Data_Health': 'NO_DATA'})
 
-                # Add to the appropriate dataframe
-                if type_name == 'delay':
-                    delay_df = pd.concat([delay_df, pd.DataFrame([new_row])], ignore_index=True)
-                elif type_name == 'slew':
-                    slew_df = pd.concat([slew_df, pd.DataFrame([new_row])], ignore_index=True)
-                else:  # hold
-                    hold_df = pd.concat([hold_df, pd.DataFrame([new_row])], ignore_index=True)
+            if type_name == 'delay':
+                delay_df = pd.concat([delay_df, pd.DataFrame([new_row])], ignore_index=True)
+            elif type_name == 'slew':
+                slew_df = pd.concat([slew_df, pd.DataFrame([new_row])], ignore_index=True)
+            else:
+                hold_df = pd.concat([hold_df, pd.DataFrame([new_row])], ignore_index=True)
 
     # Create the summary string
-    summary = "Sigma Waiver Summary Table (4 Pass Rates with 1-digit precision)\n\n"
-    summary += "Pass Rate Definitions:\n"
-    summary += "- Base_PR: Pass rate using only base criteria (Check 1 OR Check 2)\n"
-    summary += "- PR_with_Waiver1: Pass rate including CI enlargement waiver\n"
-    summary += "- PR_Optimistic_Only: Pass rate if we ONLY consider optimistic errors (Lib < MC)\n"
-    summary += "- PR_with_Both_Waivers: Pass rate with both CI enlargement AND optimistic-only filtering\n\n"
+    summary = "Sigma Pass-Rate Summary (1-digit precision)\n\n"
+    summary += "Columns:\n"
+    summary += "- Base_PR: relative-error OR CI-bounds pass, over COVERED arcs only\n"
+    summary += "- PR_with_Waiver1: Base + CI +6% enlargement waiver, over COVERED arcs only\n"
+    summary += "- Total_Arcs / Covered / Uncovered: lib coverage of the FMC golden arcs\n"
+    summary += "- Data_Health: OK | LOW_COVERAGE (<90% covered) | NO_DATA (0 covered)\n"
+    summary += "  NOTE: a high PR with NO_DATA / LOW_COVERAGE is NOT meaningful - check coverage first.\n\n"
 
     summary += "Delay:\n"
     summary += delay_df.to_string(index=False) if not delay_df.empty else "No delay data"
@@ -658,20 +664,16 @@ def generate_waiver_summary_table(results, root_path):
     with open(summary_file, 'w') as f:
         f.write(summary)
 
-    logging.info(f"Sigma waiver summary table saved to: {summary_file}")
+    logging.info(f"Sigma pass-rate summary table saved to: {summary_file}")
 
     # Also create a CSV version for easier processing
     csv_file = os.path.join(root_path, "sigma_PR_table_with_waivers.csv")
-
-    # Combine dataframes with a Type column
     delay_df['Type'] = 'delay'
     slew_df['Type'] = 'slew'
     hold_df['Type'] = 'hold'
     combined_df = pd.concat([delay_df, slew_df, hold_df], ignore_index=True)
-
-    # Save to CSV
     combined_df.to_csv(csv_file, index=False)
-    logging.info(f"Sigma waiver CSV saved to: {csv_file}")
+    logging.info(f"Sigma PR CSV saved to: {csv_file}")
 
     return summary_file, csv_file
 
@@ -761,10 +763,10 @@ def main():
     )
 
     logging.info("="*80)
-    logging.info("Starting SIGMA CHECK WITH UNIFIED WAIVER SYSTEM")
+    logging.info("Starting SIGMA CHECK (Base_PR + PR_with_Waiver1)")
     logging.info(f"Main log file: {main_log_file}")
-    logging.info("Implements unified pass/fail system with structured waivers")
-    logging.info("Generates 4 pass rates: Base, +Waiver1, Optimistic Only, +Both Waivers")
+    logging.info("Base_PR = relative-error OR CI-bounds; Waiver1 = CI +6% enlargement")
+    logging.info("Pass rates are reported over COVERED arcs only, with a Data_Health flag")
     logging.info("="*80)
 
     # Use arguments directly
@@ -821,37 +823,32 @@ def main():
         for file in failed_files:
             logging.info(f"    {file}")
 
-    # Generate waiver outputs
+    # Generate outputs
     if sigma_waiver_results:
-        logging.info("Generating sigma waiver outputs")
+        logging.info("Generating sigma pass-rate outputs")
 
-        # Generate waiver summary tables
+        # Generate summary table (Base_PR + PR_with_Waiver1 + coverage/Data_Health)
         summary_file, csv_file = generate_waiver_summary_table(sigma_waiver_results, root_path)
 
-        # Generate optimistic vs pessimistic breakdown
-        breakdown_file = generate_optimistic_pessimistic_breakdown(sigma_waiver_results, root_path)
-
-        logging.info(f"Sigma waiver summary table saved to: {summary_file}")
-        logging.info(f"Sigma waiver CSV saved to: {csv_file}")
-        logging.info(f"Optimistic vs pessimistic breakdown saved to: {breakdown_file}")
+        logging.info(f"Sigma pass-rate summary table saved to: {summary_file}")
+        logging.info(f"Sigma PR CSV saved to: {csv_file}")
 
         # Print summary to console
         with open(summary_file, 'r') as f:
             summary_content = f.read()
         print('\n' + "="*50)
-        print("SIGMA WAIVER SUMMARY TABLE (4 Pass Rates):")
+        print("SIGMA PASS-RATE SUMMARY (Base_PR + PR_with_Waiver1):")
         print(f"="*50)
         print(summary_content)
         print("="*50)
     else:
-        logging.warning("Could not generate sigma waiver summary table - no valid results")
+        logging.warning("Could not generate sigma summary table - no valid results")
 
     logging.info("="*80)
-    logging.info("SIGMA CHECK WITH WAIVER SYSTEM completed")
+    logging.info("SIGMA CHECK completed")
     logging.info("Generated outputs:")
-    logging.info("  - sigma_PR_table_with_waivers.csv (new waiver table)")
+    logging.info("  - sigma_PR_table_with_waivers.csv (Base_PR + PR_with_Waiver1 + coverage/Data_Health)")
     logging.info("  - sigma_waiver_summary_table.txt (human-readable summary)")
-    logging.info("  - optimistic_pessimistic_breakdown.txt (detailed breakdown)")
     logging.info("  - *_sigma_check_with_waivers.csv (individual corner/type results)")
 
 if __name__ == "__main__":
