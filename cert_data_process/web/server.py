@@ -89,7 +89,7 @@ def serve(runs_root: Any, port: int = 8765, host: str = "127.0.0.1",
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
-        print("\nstopping…")
+        print("\nstopping...")
     finally:
         manager.shutdown()
         httpd.server_close()

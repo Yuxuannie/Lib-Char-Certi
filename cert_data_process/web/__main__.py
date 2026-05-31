@@ -3,12 +3,23 @@
 from __future__ import annotations
 
 import argparse
+import sys
 
 from . import runs
 from .server import serve
 
 
+def _harden_stdout() -> None:
+    """EDA hosts often use a latin-1 stdout; never crash on a stray Unicode char."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="backslashreplace")  # py3.7+
+        except (AttributeError, ValueError):
+            pass
+
+
 def main() -> None:
+    _harden_stdout()
     ap = argparse.ArgumentParser(
         prog="cert_data_process.web",
         description="Lib-Char-Certi local console server (configure, launch, view, compare).",

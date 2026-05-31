@@ -113,7 +113,7 @@ def _build_certi_data(config: CertDataProcessConfig, stage_execution: list[dict[
     batch_id = f"{config.process}_{config.process_version}_{config.vendor}".replace(".", "p")
     batch = {
         "id": batch_id,
-        "name": f"{config.process} {config.process_version} · {config.vendor}",
+        "name": f"{config.process} {config.process_version} {config.vendor}",
         "vendor": config.vendor,
         "process": config.process,
         "version": config.process_version,
