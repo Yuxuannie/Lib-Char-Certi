@@ -245,6 +245,66 @@ def _record_stage(stage_execution: list, compatibility_stage_reports: list, resu
     return result_obj.failed
 
 
+def execute_stages(config, on_stage=None):
+    """Run the pipeline stages for one config; shared by the CLI and web executor.
+
+    ``on_stage(stage_dict)`` is invoked as each stage starts (status='running') and
+    again when it completes, so a live UI can track progress. Returns
+    ``(stage_execution, compatibility_stage_reports, failed)``.
+    """
+
+    from .stages.get_pr_moments import run_get_pr_moments
+    from .stages.pr_web_app import run_generate_pr_web_app
+
+    materialize_output_tree(config.output_dir)
+    stage_execution: list = []
+    compatibility_stage_reports: list = []
+    failed = False
+
+    def _running(name: str, pipeline: str) -> None:
+        if on_stage:
+            on_stage({"stage": name, "status": "running", "pipeline": pipeline, "reason": ""})
+
+    def _done(result) -> None:
+        nonlocal failed
+        failed = _record_stage(stage_execution, compatibility_stage_reports, result) or failed
+        if on_stage:
+            on_stage(result.stage_execution)
+
+    if config.run_sigma:
+        # Full MC is removed (G4): moments are derived from FMC data below.
+        _running("fmc_combine_data", "sigma")
+        print("[fmc_combine_data] running")
+        _done(run_fmc_combine_data(config))
+
+        _running("lib_join_sigma", "sigma")
+        print("[lib_join_sigma] running")
+        _done(run_lib_join_sigma(config))
+
+        _running("build_pr_table", "sigma")
+        print("[build_pr_table] running")
+        _done(run_build_pr_table(config))
+
+        _running("get_pr_moments", "moments")
+        print("[get_pr_moments] running")
+        _done(run_get_pr_moments(config))
+    else:
+        skipped = {
+            "stage": "build_pr_table",
+            "pipeline": "sigma,moments",
+            "status": "skipped",
+            "reason": "requires_fmc_inputs",
+        }
+        stage_execution.append(skipped)
+        _announce_stage(skipped)
+        if on_stage:
+            on_stage(skipped)
+
+    _done(run_generate_pr_web_app(config, stage_execution))
+    write_manifests(config, stage_execution, compatibility_stage_reports)
+    return stage_execution, compatibility_stage_reports, failed
+
+
 def run(argv: Optional[Iterable[str]] = None) -> int:
     """Run the CLI and return a process exit code."""
 
@@ -267,48 +327,7 @@ def run(argv: Optional[Iterable[str]] = None) -> int:
     except ValueError as exc:
         parser.error(str(exc))
 
-    materialize_output_tree(config.output_dir)
-
-    stage_execution = []
-    compatibility_stage_reports = []
-    failed = False
-    if config.run_sigma:
-        print("[fmc_combine_data] running")
-        fmc_result = run_fmc_combine_data(config)
-        failed = _record_stage(stage_execution, compatibility_stage_reports, fmc_result) or failed
-
-    # Full MC is removed (G4): moments are derived from the FMC data below, so
-    # there is no separate full_mc parse/normalize stage.
-
-    if config.run_sigma:
-        print("[lib_join_sigma] running")
-        lib_join_result = run_lib_join_sigma(config)
-        failed = _record_stage(stage_execution, compatibility_stage_reports, lib_join_result) or failed
-
-    if config.run_sigma:
-        print("[build_pr_table] running")
-        sigma_pr_result = run_build_pr_table(config)
-        failed = _record_stage(stage_execution, compatibility_stage_reports, sigma_pr_result) or failed
-
-        print("[get_pr_moments] running")
-        from .stages.get_pr_moments import run_get_pr_moments
-        moments_pr_result = run_get_pr_moments(config)
-        failed = _record_stage(stage_execution, compatibility_stage_reports, moments_pr_result) or failed
-    else:
-        skipped = {
-            "stage": "build_pr_table",
-            "pipeline": "sigma,moments",
-            "status": "skipped",
-            "reason": "requires_fmc_inputs",
-        }
-        stage_execution.append(skipped)
-        _announce_stage(skipped)
-
-    from .stages.pr_web_app import run_generate_pr_web_app
-    web_result = run_generate_pr_web_app(config, stage_execution)
-    failed = _record_stage(stage_execution, compatibility_stage_reports, web_result) or failed
-
-    write_manifests(config, stage_execution, compatibility_stage_reports)
+    _stages, _compat, failed = execute_stages(config)
     print(f"Initialized cert_data_process output tree at: {config.output_dir}")
     return 1 if failed else 0
 

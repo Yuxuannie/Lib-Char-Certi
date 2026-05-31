@@ -8,3 +8,4 @@ dist/
 .DS_Store
 *_check_*.log
 sigma_waiver_check_*.log
+certi_runs/

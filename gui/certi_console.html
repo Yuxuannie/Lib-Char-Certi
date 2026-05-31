@@ -93,6 +93,8 @@ select:focus,input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--a
 .step .dot{width:9px;height:9px;border-radius:50%;position:absolute;top:16px;right:16px}
 .step[data-s="passed"] .dot{background:var(--ok)} .step[data-s="partial"] .dot{background:var(--warn)}
 .step[data-s="failed"] .dot{background:var(--bad)} .step[data-s="skipped"] .dot{background:var(--ink-4)}
+.step[data-s="pending"] .dot{background:#d7dbe0} .step[data-s="running"] .dot{background:var(--accent);animation:blip 1s infinite}
+@keyframes blip{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(37,99,235,.4)}50%{opacity:.5;box-shadow:0 0 0 5px rgba(37,99,235,0)}}
 .step .n{font-size:11px;color:var(--ink-3);font-weight:500}
 .step .nm{font-size:13.5px;font-weight:600;margin-top:8px}
 .step .r{font-size:11.5px;color:var(--ink-3);margin-top:6px;min-height:14px}
@@ -259,7 +261,24 @@ const DEMO={batches:[
     {corner:"ssgnp_0p450v_m40c",type:"hold",eBase:null,eW1:null,lBase:90.2,lW1:90.6,total:1261,covered:1261,health:"OK"}],
   moments:[{corner:"ssgnp_0p450v_m40c",type:"delay",ms:98.4,std:96.9,skew:99.9,total:1180,covered:1174,health:"OK"}]}
 ]};
-const DATA=(window.CERTI_DATA&&window.CERTI_DATA.batches)?window.CERTI_DATA:DEMO;
+const API=!!window.CERTI_API;
+let DATA=(window.CERTI_DATA&&window.CERTI_DATA.batches)?window.CERTI_DATA:DEMO;
+async function apiGet(p){const r=await fetch(p);if(!r.ok)throw new Error(r.status);return r.json();}
+async function apiPost(p,b){const r=await fetch(p,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)});
+  const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||("HTTP "+r.status));return j;}
+function stubFromIndex(ix){return {id:ix.id,name:ix.name,vendor:ix.vendor,process:ix.process,version:ix.version,
+  when:(ix.when_utc||"").replace("T"," ").slice(0,16),recipe:"",libdir:"",stages:[],sigma:[],moments:[],_loaded:false,_summary:ix};}
+async function ensureLoaded(b){if(!API||!b||b._loaded)return;
+  try{const full=await apiGet("/api/batch/"+encodeURIComponent(b.id));
+    Object.assign(b,full,{when:(full.when_utc||b.when||"").replace("T"," ").slice(0,16),_loaded:true});}
+  catch(e){b._loaded=true;}}
+async function refreshHistory(keepId){
+  if(!API)return;
+  try{const j=await apiGet("/api/history");DATA={batches:(j.index||[]).map(stubFromIndex)};
+    const sel=$("#batchPick");if(sel)sel.innerHTML=DATA.batches.map(b=>`<option value="${esc(b.id)}">${esc(b.name)}</option>`).join("");
+    if(keepId&&DATA.batches.some(b=>b.id===keepId)){state.batchId=keepId;if(sel)sel.value=keepId;}
+    else if(DATA.batches.length){state.batchId=DATA.batches[0].id;if(sel)sel.value=state.batchId;}
+  }catch(e){}}
 
 /* ====================== HELPERS ====================== */
 const $=s=>document.querySelector(s);
@@ -270,11 +289,12 @@ const shortCorner=c=>String(c).replace("ssgnp_","").replace("ssgng_","").replace
 const ALL_TYPES=["delay","slew","hold","mpw"];
 const TARGET=95;
 const CHECK='<svg viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>';
-let state={batchId:DATA.batches[0].id,view:"setup",compare:new Set(),corners:[],types:[]};
-const batch=()=>DATA.batches.find(b=>b.id===state.batchId);
-const cornersOf=b=>[...new Set((b.sigma||[]).map(r=>r.corner))];
-const typesOf=b=>[...new Set((b.sigma||[]).map(r=>r.type))];
-const historyCorners=()=>[...new Set(DATA.batches.flatMap(b=>(b.sigma||[]).map(r=>r.corner)))];
+let state={batchId:DATA.batches[0].id,view:"setup",compare:new Set(),corners:[],types:[],live:null,poll:null};
+const batch=()=>DATA.batches.find(b=>b.id===state.batchId)||DATA.batches[0];
+const cnrs=b=>b?[...new Set([...((b.config&&b.config.corners)||[]),...((b._summary&&b._summary.corners)||[]),...((b.sigma||[]).map(r=>r.corner))])]:[];
+const cornersOf=cnrs;
+const typesOf=b=>[...new Set([...((b.config&&b.config.types)||[]),...((b.sigma||[]).map(r=>r.type))])];
+const historyCorners=()=>[...new Set(DATA.batches.flatMap(cnrs))];
 
 /* ====================== SETUP (editable corners + mpw) ====================== */
 function viewSetup(b){
@@ -296,14 +316,12 @@ function viewSetup(b){
         <span class="hint">Corners are free-form — add any. Suggestions come from your run history.</span></div>
       <div class="f wide"><label>Timing types</label>
         <div class="chips" id="typeChips">${ALL_TYPES.map(t=>`<span class="chip ${state.types.includes(t)?"on":""}" data-t="${t}">${t}</span>`).join("")}</div></div>
-      <div class="f wide"><label>FMC golden dir (decks)</label><input value="/SIM/.../N2P_${esc(b.version)}/.../gen DECKS/"></div>
-      <div class="f wide"><label>Lib dir</label><input value="${esc(b.libdir)}"></div>
-      <div class="f wide"><label>Output dir</label><input value="./${esc(b.id)}/"></div>
+      <div class="f wide"><label>FMC golden dir (decks)</label><input id="f_fmc" value="/SIM/.../N2P_${esc(b.version)}/.../gen DECKS/"></div>
+      <div class="f wide"><label>Lib dir</label><input id="f_lib" value="${esc(b.libdir)}"></div>
     </div>
     <div class="actions">
-      <button class="btn primary" onclick="go('pipeline')"><svg viewBox="0 0 24 24"><path d="M5 3l14 9-14 9V3z"/></svg>Run certification</button>
-      <button class="btn">Validate inputs</button>
-      <span class="hint">Moments derive from FMC data — no Full-MC required.</span>
+      <button class="btn primary" onclick="submitRun()"><svg viewBox="0 0 24 24"><path d="M5 3l14 9-14 9V3z"/></svg>Run certification</button>
+      <span class="hint" id="runMsg">Moments derive from FMC data — no Full-MC required.</span>
     </div></div>`;
 }
 function renderCornerEditor(){
@@ -321,16 +339,25 @@ function removeCorner(c){state.corners=state.corners.filter(x=>x!==c); renderCor
 function viewPipeline(b){
   const order=["fmc_combine_data","lib_join_sigma","build_pr_table","get_pr_moments","generate_pr_web_app"];
   const label={fmc_combine_data:"FMC Combine",lib_join_sigma:"Lib Join",build_pr_table:"Sigma PR",get_pr_moments:"Moments PR",generate_pr_web_app:"Dashboard"};
-  const c=b.stages.reduce((a,s)=>(a[s.status]=(a[s.status]||0)+1,a),{});
-  const steps=order.map(s=>{const st=b.stages.find(x=>x.stage===s)||{status:"skipped",reason:""};
+  const live=state.live;
+  const stmap={};
+  if(live){order.forEach(s=>stmap[s]={status:live.stages[s]||"pending",reason:""});}
+  else{(b.stages||[]).forEach(s=>stmap[s.stage]={status:s.status,reason:s.reason});}
+  const list=order.map(s=>stmap[s]||{status:b.stages&&b.stages.length?"skipped":"pending",reason:""});
+  const c=list.reduce((a,x)=>(a[x.status]=(a[x.status]||0)+1,a),{});
+  const steps=order.map(s=>{const st=stmap[s]||{status:"pending",reason:""};
     return `<div class="step" data-s="${st.status}"><span class="dot"></span><div class="n">${st.status}</div>
       <div class="nm">${label[s]}</div><div class="r">${esc(st.reason||"—")}</div></div>`;}).join("");
-  return `<div class="row k4" style="margin-bottom:18px">
+  const done=live&&["passed","partial","failed"].includes(live.state);
+  const banner=live?`<div class="alert ${live.state==='failed'?'NO_DATA':(live.state==='running'||live.state==='queued')?'LOW_COVERAGE':''}" style="${live.state==='passed'||live.state==='partial'?'background:var(--ok-bg);border-color:var(--ok-line);color:#14532d':''}">
+      <svg class="ai" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+      <div><b>${esc(live.name)}</b> — ${esc(live.state)}${live.error?": "+esc(live.error):""}. ${done?"Completed — it is now the active batch; open the Results tab.":"Live — this view refreshes automatically."}</div></div>`:"";
+  return `${banner}<div class="row k4" style="margin-bottom:18px">
       <div class="stat ok"><div class="k">Passed</div><div class="v">${c.passed||0}</div><div class="d">stages complete</div></div>
-      <div class="stat warn"><div class="k">Partial</div><div class="v">${c.partial||0}</div><div class="d">needs attention</div></div>
+      <div class="stat warn"><div class="k">Partial</div><div class="v">${(c.partial||0)+(c.running||0)}</div><div class="d">running / partial</div></div>
       <div class="stat bad"><div class="k">Failed</div><div class="v">${c.failed||0}</div><div class="d">blocking</div></div>
-      <div class="stat"><div class="k">Skipped</div><div class="v">${c.skipped||0}</div><div class="d">not run</div></div></div>
-    <div class="card pad"><div class="sec"><h3>Pipeline</h3><span class="badge">${esc(b.name)}</span></div><div class="pipe">${steps}</div></div>`;
+      <div class="stat"><div class="k">Skipped</div><div class="v">${(c.skipped||0)+(c.pending||0)}</div><div class="d">pending / not run</div></div></div>
+    <div class="card pad"><div class="sec"><h3>Pipeline</h3><span class="badge">${esc(live?live.name:b.name)}</span></div><div class="pipe">${steps}</div></div>`;
 }
 
 /* ====================== RESULTS ====================== */
@@ -417,15 +444,53 @@ function wireSetup(){
   document.querySelectorAll('.seg[data-seg="vendor"] span').forEach(s=>s.onclick=()=>{
     document.querySelectorAll('.seg[data-seg="vendor"] span').forEach(x=>x.classList.remove("on")); s.classList.add("on");});
 }
-function go(v){state.view=v;render();}
-function openBatch(id){state.batchId=id;$("#batchPick").value=id;seedConfig();go("results");}
+async function go(v){
+  state.view=v;
+  if(v==="results"){await ensureLoaded(batch());}
+  else if(v==="compare"){for(const id of state.compare){await ensureLoaded(DATA.batches.find(b=>b.id===id));}}
+  render();
+}
+async function openBatch(id){
+  state.batchId=id; const sel=$("#batchPick"); if(sel)sel.value=id;
+  await ensureLoaded(batch()); seedConfig(); state.view="results"; render();
+}
 function toggleCmp(id){state.compare.has(id)?state.compare.delete(id):state.compare.add(id);render();}
-function seedConfig(){const b=batch();state.corners=cornersOf(b);state.types=typesOf(b).length?typesOf(b):["delay"];}
-function init(){
+function seedConfig(){const c=cornersOf(batch());state.corners=c.slice();const t=typesOf(batch());state.types=t.length?t.slice():["delay"];}
+
+function gatherConfig(){
+  const seg=document.querySelector('.seg[data-seg="vendor"] span.on');
+  const val=id=>{const e=document.getElementById(id);return e?e.value.trim():"";};
+  return {name:val("f_name"),vendor:seg?seg.dataset.v:"cdns",process:val("f_proc"),process_version:val("f_ver"),
+    corners:state.corners.slice(),types:state.types.slice(),fmc_golden_dir:val("f_fmc"),lib_dir:val("f_lib")};
+}
+async function submitRun(){
+  const cfg=gatherConfig(); const m=$("#runMsg");
+  const warn=t=>{if(m){m.textContent=t;m.style.color="var(--bad)";}};
+  if(!cfg.corners.length)return warn("Add at least one corner first.");
+  if(!cfg.types.length)return warn("Select at least one timing type.");
+  if(!API){state.live=null;return go("pipeline");}        // static demo mode
+  if(m){m.textContent="submitting…";m.style.color="var(--ink-3)";}
+  try{
+    const r=await apiPost("/api/run",cfg);
+    state.live={id:r.id,name:cfg.name||r.id,state:"queued",stages:{},error:null};
+    state.view="pipeline"; render(); startPolling(r.id);
+  }catch(e){warn("run rejected: "+e.message);}
+}
+function startPolling(id){
+  if(state.poll)clearInterval(state.poll);
+  state.poll=setInterval(async()=>{
+    let st; try{st=await apiGet("/api/status/"+encodeURIComponent(id));}catch(e){return;}
+    state.live={id,name:st.name,state:st.state,stages:st.stages||{},error:st.error};
+    if(state.view==="pipeline")render();
+    if(["passed","partial","failed"].includes(st.state)){clearInterval(state.poll);state.poll=null;await refreshHistory(id);}
+  },1200);
+}
+async function init(){
+  if(API){await refreshHistory();}
   const sel=$("#batchPick");
-  sel.innerHTML=DATA.batches.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join("");
-  sel.value=state.batchId; seedConfig();
-  sel.onchange=()=>{state.batchId=sel.value;seedConfig();render();};
+  sel.innerHTML=DATA.batches.map(b=>`<option value="${esc(b.id)}">${esc(b.name)}</option>`).join("");
+  sel.value=state.batchId; await ensureLoaded(batch()); seedConfig();
+  sel.onchange=async()=>{state.batchId=sel.value;await ensureLoaded(batch());seedConfig();render();};
   document.querySelectorAll(".navItem").forEach(n=>n.onclick=()=>go(n.dataset.view));
   render();
 }
