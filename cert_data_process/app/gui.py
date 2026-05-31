@@ -89,19 +89,61 @@ class CertiApp:
             st.theme_use("clam")
         except Exception:
             pass
-        st.configure("TNotebook.Tab", padding=(16, 8), font=("TkDefaultFont", 10))
-        st.configure("Treeview", rowheight=24)
-        st.configure("Treeview.Heading", font=("TkDefaultFont", 9, "bold"))
-        st.configure("Run.TButton", font=("TkDefaultFont", 10, "bold"))
+        BG, CARD, HEAD = "#eef1f5", "#ffffff", "#1e293b"
+        INK, MUTE, ACCENT = "#0f172a", "#64748b", "#2563eb"
+        LINE, TABBG, SEL = "#d7dde5", "#dde3ea", "#dbeafe"
+        self.palette = dict(BG=BG, CARD=CARD, HEAD=HEAD, INK=INK, MUTE=MUTE, ACCENT=ACCENT, LINE=LINE)
+        FONT = ("DejaVu Sans", 10)
+        self.root.configure(bg=BG)
+        self.root.option_add("*Font", "{DejaVu Sans} 10")
+
+        st.configure(".", background=BG, foreground=INK, font=FONT, focuscolor=BG)
+        st.configure("TFrame", background=BG)
+        st.configure("Card.TFrame", background=CARD)
+        st.configure("TLabel", background=BG, foreground=INK)
+        st.configure("Muted.TLabel", background=BG, foreground=MUTE)
+        st.configure("H1.TLabel", background=HEAD, foreground="#ffffff", font=("DejaVu Sans", 15, "bold"))
+        st.configure("H1sub.TLabel", background=HEAD, foreground="#94a3b8", font=FONT)
+        st.configure("Sec.TLabel", background=BG, foreground=INK, font=("DejaVu Sans", 11, "bold"))
+
+        st.configure("TNotebook", background=BG, borderwidth=0, tabmargins=(6, 6, 6, 0))
+        st.configure("TNotebook.Tab", padding=(20, 9), background=TABBG, foreground=MUTE,
+                     font=("DejaVu Sans", 10, "bold"), borderwidth=0)
+        st.map("TNotebook.Tab", background=[("selected", CARD)], foreground=[("selected", ACCENT)])
+
+        st.configure("Treeview", background=CARD, fieldbackground=CARD, foreground=INK,
+                     rowheight=27, borderwidth=1, relief="solid")
+        st.configure("Treeview.Heading", background="#e2e8f0", foreground=MUTE,
+                     font=("DejaVu Sans", 9, "bold"), relief="flat", padding=(6, 6))
+        st.map("Treeview.Heading", background=[("active", "#d3dbe5")])
+        st.map("Treeview", background=[("selected", SEL)], foreground=[("selected", INK)])
+
+        st.configure("TButton", padding=(13, 7), background="#e6eaef", foreground=INK, borderwidth=0)
+        st.map("TButton", background=[("active", "#d7dde5")])
+        st.configure("Run.TButton", background=ACCENT, foreground="#ffffff",
+                     font=("DejaVu Sans", 11, "bold"), padding=(18, 9))
+        st.map("Run.TButton", background=[("active", "#1d4fd7")])
+        st.configure("TEntry", fieldbackground=CARD, bordercolor=LINE, borderwidth=1, padding=4)
+        st.configure("TCombobox", fieldbackground=CARD, padding=4)
+        st.configure("TRadiobutton", background=BG)
+        st.configure("TCheckbutton", background=BG)
+        st.configure("TLabelframe", background=CARD, bordercolor=LINE, borderwidth=1, relief="solid")
+        st.configure("TLabelframe.Label", background=CARD, foreground=MUTE, font=("DejaVu Sans", 10, "bold"))
 
     # ---- layout ----
     def _build(self):
         tk, ttk = self.tk, self.ttk
-        hdr = ttk.Frame(self.root, padding=(14, 10))
-        hdr.pack(fill="x")
-        ttk.Label(hdr, text="Lib-Char-Certi", font=("TkDefaultFont", 15, "bold")).pack(side="left")
-        ttk.Label(hdr, text="  Certification Console", foreground="#8a94a6").pack(side="left")
-        self.host_lbl = ttk.Label(hdr, text=f"runs: {self.runs_root}", foreground="#8a94a6")
+        HEAD = self.palette["HEAD"]
+        head = tk.Frame(self.root, bg=HEAD)
+        head.pack(fill="x")
+        inner = tk.Frame(head, bg=HEAD)
+        inner.pack(fill="x", padx=18, pady=13)
+        tk.Label(inner, text="Lib-Char-Certi", bg=HEAD, fg="#ffffff",
+                 font=("DejaVu Sans", 15, "bold")).pack(side="left")
+        tk.Label(inner, text="   Certification Console", bg=HEAD, fg="#94a3b8",
+                 font=("DejaVu Sans", 10)).pack(side="left")
+        self.host_lbl = tk.Label(inner, text=f"runs: {self.runs_root}", bg=HEAD, fg="#94a3b8",
+                                  font=("DejaVu Sans", 9))
         self.host_lbl.pack(side="right")
 
         self.nb = ttk.Notebook(self.root)
@@ -142,7 +184,10 @@ class CertiApp:
         self.e_corner.bind("<Return>", lambda e: self._add_corner())
         ttk.Button(top, text="Add", command=self._add_corner).pack(side="left", padx=4)
         ttk.Button(top, text="Remove selected", command=self._remove_corner).pack(side="left")
-        self.lst_corner = tk.Listbox(cf, height=4)
+        self.lst_corner = tk.Listbox(cf, height=4, bg="#ffffff", fg=self.palette["INK"],
+                                     relief="solid", borderwidth=1, highlightthickness=0,
+                                     font=("DejaVu Sans", 10), activestyle="none",
+                                     selectbackground="#dbeafe", selectforeground=self.palette["INK"])
         self.lst_corner.pack(fill="x", pady=(8, 4))
         sug = ttk.Frame(cf); sug.pack(fill="x")
         ttk.Label(sug, text="From history:").pack(side="left")
@@ -165,7 +210,7 @@ class CertiApp:
         ttk.Button(actions, text="▶  Run certification", style="Run.TButton",
                    command=self._submit).pack(side="left")
         self.setup_msg = ttk.Label(actions, text="Moments derive from FMC data — no Full-MC required.",
-                                   foreground="#8a94a6")
+                                   style="Muted.TLabel")
         self.setup_msg.pack(side="left", padx=12)
 
     def _field(self, parent, label, default=""):
@@ -193,27 +238,29 @@ class CertiApp:
     def _build_pipeline(self):
         ttk = self.ttk
         f = self.tab_pipe
-        self.pipe_banner = ttk.Label(f, text="No run yet — configure one in Setup.", font=("TkDefaultFont", 11))
-        self.pipe_banner.pack(anchor="w", pady=(0, 12))
+        self.pipe_banner = ttk.Label(f, text="No run yet — configure one in Setup.",
+                                     style="Sec.TLabel")
+        self.pipe_banner.pack(anchor="w", pady=(0, 14))
         self.stage_lbls = {}
         grid = ttk.Frame(f); grid.pack(fill="x")
         for i, (key, name) in enumerate(STAGES):
-            cell = ttk.LabelFrame(grid, text=name, padding=10)
+            cell = ttk.LabelFrame(grid, text=name, padding=14)
             cell.grid(row=0, column=i, padx=5, sticky="nsew")
             grid.columnconfigure(i, weight=1)
-            lbl = ttk.Label(cell, text="pending", font=("TkDefaultFont", 10, "bold"), foreground=STATE_FG["pending"])
+            lbl = ttk.Label(cell, text="pending", style="Card.TLabel",
+                            font=("DejaVu Sans", 11, "bold"), foreground=STATE_FG["pending"])
             lbl.pack()
             self.stage_lbls[key] = lbl
 
     def _build_results(self):
         ttk = self.ttk
         f = self.tab_res
-        self.res_title = ttk.Label(f, text="No batch loaded.", font=("TkDefaultFont", 11, "bold"))
+        self.res_title = ttk.Label(f, text="No batch loaded.", style="Sec.TLabel")
         self.res_title.pack(anchor="w", pady=(0, 8))
-        ttk.Label(f, text="Sigma", font=("TkDefaultFont", 10, "bold")).pack(anchor="w")
+        ttk.Label(f, text="Sigma", style="Sec.TLabel").pack(anchor="w")
         self.tv_sigma = self._make_table(f, ["Corner", "Type", "Early Base", "Early +W1",
                                              "Late Base", "Late +W1", "Coverage", "Health"])
-        ttk.Label(f, text="Moments (from FMC)", font=("TkDefaultFont", 10, "bold")).pack(anchor="w", pady=(10, 0))
+        ttk.Label(f, text="Moments (from FMC)", style="Sec.TLabel").pack(anchor="w", pady=(10, 0))
         self.tv_mom = self._make_table(f, ["Corner", "Type", "Meanshift", "Std", "Skew", "Coverage", "Health"])
 
     def _make_table(self, parent, cols):
@@ -233,7 +280,7 @@ class CertiApp:
         f = self.tab_hist
         bar = ttk.Frame(f); bar.pack(fill="x", pady=(0, 6))
         ttk.Label(bar, text="All batches — double-click to open; multi-select then Compare",
-                  foreground="#8a94a6").pack(side="left")
+                  style="Muted.TLabel").pack(side="left")
         ttk.Button(bar, text="Refresh", command=self.refresh_history).pack(side="right")
         ttk.Button(bar, text="Compare selected", command=self._do_compare).pack(side="right", padx=6)
         cols = ["Name", "When", "Vendor", "Ver", "Mean Late σ", "Health", "Status"]
@@ -252,7 +299,7 @@ class CertiApp:
         ttk = self.ttk
         f = self.tab_cmp
         ttk.Label(f, text="Late-sigma Base_PR across selected batches (pick in History).",
-                  foreground="#8a94a6").pack(anchor="w", pady=(0, 6))
+                  style="Muted.TLabel").pack(anchor="w", pady=(0, 6))
         self.cmp_holder = ttk.Frame(f); self.cmp_holder.pack(fill="both", expand=True)
 
     # ---- setup actions ----

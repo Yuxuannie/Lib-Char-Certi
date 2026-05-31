@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from cert_data_process.config import build_config
+from cert_data_process.cli import execute_stages  # main-thread import (no cycle); fail loud at startup
 from . import runs, summary
 
 _STAGE_ORDER = ["fmc_combine_data", "lib_join_sigma", "build_pr_table", "get_pr_moments", "generate_pr_web_app"]
@@ -63,8 +64,36 @@ class JobManager:
                 "stages": {s: "pending" for s in _STAGE_ORDER},
                 "started_utc": None, "ended_utc": None, "error": None,
             }
-        self._pool.submit(self._run, batch_id, config, name, when.isoformat())
+        fut = self._pool.submit(self._run, batch_id, config, name, when.isoformat())
+        fut.add_done_callback(lambda f: self._on_future_done(batch_id, name, when.isoformat(), f))
         return batch_id
+
+    def _on_future_done(self, batch_id: str, name: str, when_utc: str, fut) -> None:
+        """Surface any exception the worker swallowed (e.g. an import error) so the
+        job never silently sits at 'queued'."""
+        try:
+            exc = fut.exception()
+        except Exception:
+            exc = None
+        if exc is None:
+            return
+        err = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+        cur = self.status(batch_id)
+        if cur and cur.get("state") in ("passed", "partial", "failed"):
+            return  # _run already recorded a terminal state
+        traceback.print_exception(type(exc), exc, exc.__traceback__)
+        try:
+            d = runs.batch_dir(self.runs_root, batch_id)
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "error.log").write_text(err, encoding="utf-8")
+            record = {"schema_version": 1, "id": batch_id, "name": name, "when_utc": when_utc,
+                      "status": "failed", "stages": [], "sigma": [], "moments": [], "error": f"{type(exc).__name__}: {exc}"}
+            runs.write_run_record(self.runs_root, batch_id, record)
+            runs.update_index(self.runs_root, summary.build_index_summary(record))
+        except OSError:
+            pass
+        self._set(batch_id, state="failed", error=f"{type(exc).__name__}: {exc}",
+                  ended_utc=datetime.now(timezone.utc).isoformat())
 
     def status(self, batch_id: str) -> Optional[dict]:
         with self._lock:
@@ -86,8 +115,6 @@ class JobManager:
                 self._status[batch_id]["stages"][stage] = status
 
     def _run(self, batch_id: str, config, name: str, when_utc: str) -> None:
-        from cert_data_process.cli import execute_stages  # avoid import cycle at module load
-
         self._set(batch_id, state="running", started_utc=datetime.now(timezone.utc).isoformat())
 
         def on_stage(stage_dict: dict) -> None:
