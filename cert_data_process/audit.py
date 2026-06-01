@@ -88,6 +88,57 @@ def _patterns(se: dict, log_text: str) -> list:
     return out
 
 
+def findings_to_dicts(findings) -> list:
+    return [f.to_dict() if hasattr(f, "to_dict") else dict(f) for f in findings]
+
+
+def summarize(finding_dicts: list) -> dict:
+    errors = sum(1 for f in finding_dicts if f["severity"] == "error")
+    warns = sum(1 for f in finding_dicts if f["severity"] == "warn")
+    by_stage: dict = {}
+    for f in finding_dicts:
+        e, w = by_stage.get(f["stage"], (0, 0))
+        by_stage[f["stage"]] = (e + (f["severity"] == "error"), w + (f["severity"] == "warn"))
+    return {"errors": errors, "warns": warns, "by_stage": by_stage}
+
+
+_ICON = {"error": "✖", "warn": "⚠"}
+
+
+def format_block(stage: str, finding_dicts: list, cap: int = 6) -> list:
+    if not finding_dicts:
+        return [(f"✓ {stage} — clean", "ok")]
+    worst = "err" if any(f["severity"] == "error" for f in finding_dicts) else "warn"
+    n_err = sum(1 for f in finding_dicts if f["severity"] == "error")
+    n_warn = len(finding_dicts) - n_err
+    lines = [(f"{stage} — {n_err} error(s), {n_warn} warning(s)", worst)]
+    shown = finding_dicts[:cap]
+    for f in shown:
+        tag = "err" if f["severity"] == "error" else "warn"
+        msg = f"   {_ICON.get(f['severity'], '')} {f['message']}"
+        if f.get("detail"):
+            msg += f" — {f['detail']}"
+        lines.append((msg, tag))
+    extra = len(finding_dicts) - len(shown)
+    if extra > 0:
+        ptr = next((f.get("pointer") for f in finding_dicts if f.get("pointer")), "")
+        lines.append((f"   +{extra} more → {ptr}", worst))
+    return lines
+
+
+def write_report(finding_dicts: list, path) -> None:
+    from pathlib import Path
+    order = {"error": 0, "warn": 1}
+    ordered = sorted(finding_dicts, key=lambda f: (order.get(f["severity"], 2), f["stage"]))
+    lines = ["AUDIT REPORT", "=" * 60, ""]
+    for f in ordered:
+        lines.append(f"[{f['severity'].upper()}] {f['stage']}: {f['message']}"
+                     + (f" — {f['detail']}" if f.get("detail") else ""))
+        if f.get("pointer"):
+            lines.append(f"    see: {f['pointer']}")
+    Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def audit_stage(stage_execution: dict, log_text: str) -> list:
     findings = _structured(stage_execution) + _patterns(stage_execution, log_text)
     seen = set()
