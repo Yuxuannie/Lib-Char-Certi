@@ -60,6 +60,7 @@ class JobManager:
             vt_type=cfg.get("vt_type", ""),
             rc_type=cfg.get("rc_type", ""),
             library_type=cfg.get("library_type", "auto"),
+            abs_tol_ps_by_corner=cfg.get("abs_tol_ps_by_corner") or {},
         )
 
         with self._lock:

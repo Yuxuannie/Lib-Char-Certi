@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Iterable, Optional, Sequence, Tuple
+from typing import Dict, Iterable, Optional, Sequence, Tuple
 
 SUPPORTED_VENDORS = ("cdns", "snps")
 SUPPORTED_TYPES = ("delay", "slew", "hold", "mpw")
@@ -39,6 +39,10 @@ class CertDataProcessConfig:
     # Library structure hint: "base" | "mb" (multi-bit) | "auto". Metadata only;
     # lib-join pin lookup is always bundle-aware, so this does not gate correctness.
     library_type: str = "auto"
+    # Waiver_2 (abs_tol): user-assigned absolute tolerance in ps, per corner. Applies
+    # to HOLD Late_Sigma only. A hold arc with |Lib-MC| <= abs_tol[corner] is waived.
+    # User-provided only — never inferred. Empty/missing corner => waiver_2 inactive there.
+    abs_tol_ps_by_corner: Dict[str, float] = field(default_factory=dict)
 
     @property
     def run_sigma(self) -> bool:
@@ -103,6 +107,7 @@ def build_config(
     vt_type: str = "",
     rc_type: str = "",
     library_type: str = "auto",
+    abs_tol_ps_by_corner: Optional[Dict[str, float]] = None,
 ) -> CertDataProcessConfig:
     """Build and validate a :class:`CertDataProcessConfig`."""
 
@@ -148,4 +153,21 @@ def build_config(
         vt_type=(vt_type or "").strip(),
         rc_type=(rc_type or "").strip(),
         library_type=((library_type or "auto").strip().lower() or "auto"),
+        abs_tol_ps_by_corner=_clean_abs_tol(abs_tol_ps_by_corner),
     )
+
+
+def _clean_abs_tol(raw: Optional[Dict[str, float]]) -> Dict[str, float]:
+    """Normalize the user-provided abs_tol map: trim corner keys, keep numeric > 0."""
+    out: Dict[str, float] = {}
+    for corner, val in (raw or {}).items():
+        c = str(corner).strip()
+        if not c:
+            continue
+        try:
+            v = float(val)
+        except (TypeError, ValueError):
+            continue
+        if v > 0:
+            out[c] = v
+    return out

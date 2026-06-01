@@ -56,6 +56,38 @@ def short_corner(c: str) -> str:
     return str(c).replace("ssgnp_", "").replace("ssgng_", "").replace("_m40c", "")
 
 
+def _parse_abs_tol(text: str, corners: list) -> dict:
+    """Parse the Setup abs_tol entry into {corner: ps}.
+
+    - "19.5"                  -> that value for every current corner
+    - "c1=19.5, c2=20"        -> per-corner
+    - blank                   -> {} (waiver_2 off)
+    Non-numeric / <=0 entries are dropped (config also re-validates).
+    """
+    s = (text or "").strip()
+    if not s:
+        return {}
+    if "=" not in s:
+        try:
+            v = float(s)
+        except ValueError:
+            return {}
+        return {c: v for c in corners} if v > 0 else {}
+    out = {}
+    for part in s.replace(";", ",").split(","):
+        if "=" not in part:
+            continue
+        k, _, val = part.partition("=")
+        k = k.strip()
+        try:
+            v = float(val.strip())
+        except ValueError:
+            continue
+        if k and v > 0:
+            out[k] = v
+    return out
+
+
 def corner_suggestions(index: list) -> list:
     seen: list = []
     for row in index or []:
@@ -237,6 +269,14 @@ class CertiApp:
         self.cb_lib_type = ttk.Combobox(lrf, state="readonly", width=12, values=["auto", "base", "mb"])
         self.cb_lib_type.current(0)
         self.cb_lib_type.pack(side="left")
+
+        # Waiver_2 abs_tol (ps) — hold Late_Sigma only. Either one value applied to all
+        # corners, or per-corner "corner=val, corner2=val". User-provided; blank = off.
+        af = ttk.Frame(f); af.pack(fill="x", pady=4)
+        ttk.Label(af, text="abs_tol ps (hold)", width=16).pack(side="left")
+        self.e_abs_tol = ttk.Entry(af)
+        self.e_abs_tol.pack(side="left", fill="x", expand=True)
+        ttk.Label(af, text="e.g. 19.5  or  c1=19.5, c2=20", style="Muted.TLabel").pack(side="left", padx=6)
 
         # FMC input mode
         mf = ttk.Frame(f); mf.pack(fill="x", pady=8)
@@ -432,7 +472,7 @@ class CertiApp:
         self.pr_basis_var = tk.StringVar(value=self.pr_basis)
         seg = ttk.Frame(bar); seg.pack(side="right", padx=10)
         ttk.Label(seg, text="PR:", style="Muted.TLabel").pack(side="left")
-        for key, txt in (("base", "Base"), ("w1", "+Waiver1")):
+        for key, txt in (("base", "Base"), ("w1", "+Waiver1"), ("w2", "+Waiver2")):
             ttk.Radiobutton(seg, text=txt, value=key, variable=self.pr_basis_var,
                             command=self._on_pr_basis).pack(side="left")
         wrap = ttk.Frame(f); wrap.pack(fill="both", expand=True)
@@ -793,6 +833,7 @@ class CertiApp:
             "vt_type": self.cb_vt.get().strip(),
             "rc_type": self.cb_rc.get().strip(),
             "library_type": self.cb_lib_type.get().strip() or "auto",
+            "abs_tol_ps_by_corner": _parse_abs_tol(self.e_abs_tol.get(), list(self.corners)),
         }
         if mode == "decks":
             cfg["fmc_golden_dir"] = self.e_fmc.get().strip()
@@ -1027,6 +1068,8 @@ class CertiApp:
         self.cb_vt.set(cfg.get("vt_type") or "")
         self.cb_rc.set(cfg.get("rc_type") or "")
         self.cb_lib_type.set(cfg.get("library_type") or "auto")
+        at = cfg.get("abs_tol_ps_by_corner") or {}
+        self._set_entry(self.e_abs_tol, ", ".join(f"{k}={v}" for k, v in at.items()))
         mode = cfg.get("fmc_mode") or "decks"
         self.cb_mode.set(self._fmc_mode_labels.get(mode, self._fmc_mode_labels["decks"]))
         self._on_mode_change()

@@ -204,11 +204,47 @@ def mean_late_sigma(sigma_rows: list[dict[str, Any]]) -> Optional[float]:
     return round(sum(vals) / len(vals), 1) if vals else None
 
 
+def _apply_waiver2(sigma_rows: list, out, abs_tol_by_corner: dict) -> None:
+    """Attach waiver_2 (abs_tol) hold PR to hold sigma rows, in place.
+
+    For each hold row whose corner has an abs_tol, recompute the hold Late_Sigma PR
+    with the abs_tol waiver stacked on base+W1 (from the per-arc CSV) and store
+    ``lW2`` + ``n_waived_by_w2``. Rows without an abs_tol get ``lW2 = lW1`` so the
+    GUI's W2 view degrades gracefully. Pessimistic-only / non-hold rows are untouched.
+    """
+    if not abs_tol_by_corner:
+        for r in sigma_rows:
+            if r.get("type") == "hold":
+                r["lW2"] = r.get("lW1")
+                r["n_waived_by_w2"] = 0
+        return
+    from ..analysis import perarc as _perarc
+    from ..analysis.waivers import hold_abs_tol_pr
+    for r in sigma_rows:
+        if r.get("type") != "hold":
+            continue
+        tol = abs_tol_by_corner.get(r.get("corner"))
+        if not tol:
+            r["lW2"] = r.get("lW1")
+            r["n_waived_by_w2"] = 0
+            continue
+        csvp = _perarc.find_per_arc_csv(out, r["corner"], "hold", "Late_Sigma")
+        if not csvp:
+            r["lW2"] = r.get("lW1")
+            r["n_waived_by_w2"] = 0
+            continue
+        res = hold_abs_tol_pr(_perarc.load_rows(csvp), tol)
+        r["lW2"] = res["pr_w2"]
+        r["n_waived_by_w2"] = res["n_waived_by_w2"]
+        r["abs_tol_ps"] = tol
+
+
 def build_batch(config, stage_execution: list[dict[str, Any]], *, batch_id: str, name: str, when_utc: str) -> dict:
     """Build the CERTI_DATA batch object for one run (also the run_record body)."""
     out = config.output_dir
     sigma = build_sigma_rows(out)
     moments = build_moments_rows(out)
+    _apply_waiver2(sigma, out, getattr(config, "abs_tol_ps_by_corner", {}) or {})
     return {
         "schema_version": 1,
         "id": batch_id,
@@ -236,6 +272,7 @@ def build_batch(config, stage_execution: list[dict[str, Any]], *, batch_id: str,
             "fmc_input_dir": str(config.fmc_input_dir) if config.fmc_input_dir else None,
             "lib_dir": str(config.lib_dir),
             "output_dir": str(out),
+            "abs_tol_ps_by_corner": dict(getattr(config, "abs_tol_ps_by_corner", {}) or {}),
         },
         "status": overall_status(stage_execution),
         "stages": [
