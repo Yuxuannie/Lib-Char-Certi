@@ -73,6 +73,28 @@ def _table_type(norm_type: str, pin_dir: str) -> str:
     return "rise_constraint" if rise else "fall_constraint"  # hold / mpw
 
 
+def _as_int_str(s: str) -> str:
+    try:
+        return str(int(float(str(s).strip())))
+    except (ValueError, TypeError):
+        return str(s).strip()
+
+
+def point_indices(row: dict) -> tuple[str, str]:
+    """The integer table indices live in SCLD's `point` column (e.g. '3;5'),
+    NOT in index_1/index_2 (which hold the slew/load VALUES). Returns 1-based-style
+    index strings; lib-join applies int(float(x)-1) as it does for DFDS arcs."""
+    pt = str(row.get("point", "")).strip()
+    for sep in (";", ",", ":", " ", "/"):
+        if sep in pt:
+            parts = [p for p in pt.split(sep) if p.strip()]
+            if len(parts) >= 2:
+                return _as_int_str(parts[0]), _as_int_str(parts[1])
+    if pt:
+        return _as_int_str(pt), _as_int_str(pt)
+    return "1", "1"
+
+
 def _when_tokens(when: str) -> str:
     s = str(when).strip()
     if not s or s.lower() in ("none", "no_condition", "nocondition"):
@@ -87,23 +109,24 @@ def _when_tokens(when: str) -> str:
 
 
 def rebuild_arc(row: dict, norm_type: str) -> str:
-    """Rebuild a single-token-prefix Arc parse_arc_info can read."""
+    """Rebuild a single-token-prefix Arc parse_arc_info can read. The trailing two
+    tokens are the integer table indices from SCLD's `point` column."""
     prefix = ARC_PREFIX[norm_type]
+    i1, i2 = point_indices(row)
     parts = [
         prefix, row.get("cell", ""), row.get("pin", ""), row.get("pin_dir", ""),
         row.get("rel_pin", ""), row.get("rel_pin_dir", ""),
-        _when_tokens(row.get("when", "")),
-        str(row.get("index_1", "")).strip(), str(row.get("index_2", "")).strip(),
+        _when_tokens(row.get("when", "")), i1, i2,
     ]
     return "_".join(str(p).strip() for p in parts)
 
 
 def _common_cols(row: dict, arc: str) -> list:
+    i1, i2 = point_indices(row)
     return [
         arc, row.get("cell", ""), row.get("pin", ""), row.get("rel_pin", ""),
         row.get("pin_dir", ""), row.get("rel_pin_dir", ""),
-        _when_tokens(row.get("when", "")),
-        str(row.get("index_1", "")).strip(), str(row.get("index_2", "")).strip(),
+        _when_tokens(row.get("when", "")), i1, i2,
     ]
 
 

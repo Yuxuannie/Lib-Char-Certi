@@ -20,15 +20,15 @@ _CONS_HDR = [
 ]
 
 
-def _delay_row(typ, pdir, when):
-    return ["ssgnp", "INVD1", "Z", "A", pdir, "rise", when, "CP", typ, "4", "4",
+def _delay_row(typ, pdir, when, point="3;5"):
+    return ["ssgnp", "INVD1", "Z", "A", pdir, "rise", when, point, typ, "0.0728", "0.0107",
             "0.035", "0.0001", "0.046", "0.00076", "0.0002", "0.041", "0.00075",
             "0.000001", "0.00003", "0.000005", "0.0008", "0.085", "0.0009",
             "-1.27", "0.07", "1.18", "fmc", "/decks/x"]
 
 
-def _cons_row(typ, pdir):
-    return ["ssgnp", "DFF", "D", "CP", pdir, "rise", "SE&!SI", "CP", typ, "4", "4",
+def _cons_row(typ, pdir, point="2;3"):
+    return ["ssgnp", "DFF", "D", "CP", pdir, "rise", "SE&!SI", point, typ, "0.05", "0.01",
             "0.5", "0.001", "0.066", "0.002", "fmc", "/d"]
 
 
@@ -53,10 +53,11 @@ def test_delay_file_splits_into_delay_and_slew(tmp_path):
     assert d["MC_Std"] == 85.0              # 0.085 ns -> ps
     assert d["MC_Skew"] == 0.07             # dimensionless, unscaled
     assert d["Table_Type"] == "cell_rise"
-    assert d["Arc"] == "combinational_INVD1_Z_rise_A_rise_E_notTE_4_4"
+    assert d["Arc"] == "combinational_INVD1_Z_rise_A_rise_E_notTE_3_5"
+    assert d["first_index"] == "3" and d["sec_index"] == "5"
     s = dict(zip(A.DELAY_SLEW_HEADER, by_type["slew"][0]))
     assert s["Table_Type"] == "fall_transition"
-    assert s["Arc"].endswith("_NO_CONDITION_4_4")
+    assert s["Arc"].endswith("_NO_CONDITION_3_5")
 
 
 def test_cons_file_splits_into_hold_and_mpw(tmp_path):
