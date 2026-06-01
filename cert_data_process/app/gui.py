@@ -253,7 +253,7 @@ class CertiApp:
             entry.delete(0, "end"); entry.insert(0, d)
 
     def _build_pipeline(self):
-        ttk = self.ttk
+        tk, ttk = self.tk, self.ttk
         f = self.tab_pipe
         self.pipe_banner = ttk.Label(f, text="No run yet — configure one in Setup.",
                                      style="Sec.TLabel")
