@@ -300,8 +300,10 @@ class CertiApp:
                             font=("DejaVu Sans", 11, "bold"), foreground=STATE_FG["pending"])
             lbl.pack()
             self.stage_lbls[key] = lbl
-        # high-level live log (C)
-        ttk.Label(f, text="Log", style="Sec.TLabel").pack(anchor="w", pady=(16, 4))
+        # high-level live log (C) + full-audit-report access
+        logbar = ttk.Frame(f); logbar.pack(fill="x", pady=(16, 4))
+        ttk.Label(logbar, text="Log", style="Sec.TLabel").pack(side="left")
+        ttk.Button(logbar, text="Open audit report", command=self._open_audit_report).pack(side="right")
         logwrap = ttk.Frame(f); logwrap.pack(fill="both", expand=True)
         self.log_text = tk.Text(logwrap, height=12, wrap="word", relief="solid", borderwidth=1,
                                 bg="#0e1518", fg="#cfe6db", insertbackground="#cfe6db",
@@ -320,6 +322,42 @@ class CertiApp:
         self.log_text.insert("end", msg + "\n", (tag,) if tag else ())
         self.log_text.see("end")
         self.log_text.configure(state="disabled")
+
+    def _audit_report_path(self):
+        """logs/audit_report.txt for the active run, else the loaded batch."""
+        from pathlib import Path
+        bid = self.active_job
+        if not bid:
+            rec = getattr(self, "loaded_rec", None)
+            bid = rec.get("id") if rec else None
+        if not bid:
+            return None
+        p = Path(runs.batch_dir(self.runs_root, bid)) / "logs" / "audit_report.txt"
+        return p if p.is_file() else None
+
+    def _open_audit_report(self):
+        tk = self.tk
+        from tkinter import messagebox
+        p = self._audit_report_path()
+        if not p:
+            return messagebox.showinfo(
+                "Audit report",
+                "No audit_report.txt yet. Run a batch (or open one from History) first.\n"
+                "The report is written to <run>/logs/audit_report.txt.")
+        win = tk.Toplevel(self.root)
+        win.title(f"Audit report — {p.parent.parent.name}")
+        win.geometry("760x560")
+        txt = tk.Text(win, wrap="word", font=("DejaVu Sans Mono", 9), padx=10, pady=8)
+        sb = self.ttk.Scrollbar(win, orient="vertical", command=txt.yview)
+        txt.configure(yscrollcommand=sb.set)
+        txt.tag_configure("err", foreground="#b91c1c")
+        txt.tag_configure("warn", foreground="#b45309")
+        for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+            tag = "err" if line.startswith("[ERROR]") else "warn" if line.startswith("[WARN]") else None
+            txt.insert("end", line + "\n", (tag,) if tag else ())
+        txt.configure(state="disabled")
+        txt.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
 
     def _build_results(self):
         tk, ttk = self.tk, self.ttk

@@ -79,6 +79,9 @@ def test_app_constructs_and_renders(tmp_path, fake_tk):
     assert _o.arc_indices("combinational_A_Z_rise_A_rise_NO_CONDITION_3_5") == ("3", "5")
     tps = _o.rank_by_table_point(test_rows, "Late_Sigma")
     assert tps[0]["index1"] == "3" and tps[0]["index2"] == "5"
+    # audit report access (no file -> info dialog path, mocked)
+    assert app._audit_report_path() is None
+    app._open_audit_report()
 
 
 def test_pr_status_and_outliers_render_with_a_real_record(tmp_path, fake_tk):
