@@ -53,3 +53,37 @@ def test_app_constructs_and_renders(tmp_path, fake_tk):
     app._gather()              # config gather (mode routing)
     app._rerun_loaded()        # load config back into Setup
     app._mode_key()
+    # new consolidated PR + outliers tabs (render with no runs -> empty paths)
+    app._pr_records()
+    app._render_pr_status()
+    app._render_outliers()
+    app.pr_basis = "base"
+    app._render_pr_status()
+
+
+def test_pr_status_and_outliers_render_with_a_real_record(tmp_path, fake_tk):
+    from cert_data_process.app.gui import CertiApp
+    from cert_data_process.web import runs
+
+    rid = "b3_svt_20260601_000000"
+    runs.write_run_record(tmp_path, rid, {
+        "id": rid, "name": "B3 SVT", "batch_id": "B3",
+        "config": {"vt_type": "svt", "library_type": "mb"},
+        "sigma": [
+            {"corner": "ssgnp_0p475v_0c", "type": "delay", "nomBase": 100.0, "nomW1": 100.0,
+             "eBase": 100.0, "eW1": 100.0, "lBase": 92.59, "lW1": 92.7, "health": "OK"},
+            {"corner": "ssgnp_0p475v_0c", "type": "hold", "nomBase": 100.0, "nomW1": 100.0,
+             "lBase": 91.49, "lW1": 91.5, "health": "OK"},
+        ],
+        "moments": [
+            {"corner": "ssgnp_0p475v_0c", "type": "delay", "ms": 99.6, "std": 99.9, "skew": 100.0,
+             "msW1": 99.6, "stdW1": 99.9, "skewW1": 100.0, "health": "OK"},
+        ],
+    })
+    runs.update_index(tmp_path, {"id": rid, "name": "B3 SVT", "when_utc": "2026-06-01T00:00:00"})
+
+    app = CertiApp(runs_root=tmp_path)
+    recs = app._pr_records()
+    assert len(recs) == 1 and recs[0]["id"] == rid
+    app._render_pr_status()    # builds the colored pivot grid from real data
+    app._render_outliers()     # 92.59 / 91.49 are < 95 -> inserts outlier rows (no per-arc csv -> "?")

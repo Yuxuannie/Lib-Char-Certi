@@ -14,6 +14,12 @@ from typing import Any, Optional
 from ..web import runs
 from ..web import summary as _summary
 from ..web.executor import JobManager
+from ..analysis import consolidate as _consolidate
+from ..analysis import outliers as _outliers
+from ..analysis import perarc as _perarc
+
+# consolidate_pr color band -> PR_BG/PR_FG key
+_COLOR2CLS = {"green": "hi", "amber": "mid", "red": "lo", "none": "na"}
 
 # Pass-rate cell colors (B): green >=95, amber 90-<95, red <90, neutral unknown.
 PR_BG = {"hi": "#d8f5e0", "mid": "#fdebc8", "lo": "#fad4d4", "na": "#eef2f7"}
@@ -157,14 +163,20 @@ class CertiApp:
         self.tab_setup = ttk.Frame(self.nb, padding=16)
         self.tab_pipe = ttk.Frame(self.nb, padding=16)
         self.tab_res = ttk.Frame(self.nb, padding=12)
+        self.tab_pr = ttk.Frame(self.nb, padding=12)
+        self.tab_out = ttk.Frame(self.nb, padding=12)
         self.tab_hist = ttk.Frame(self.nb, padding=12)
         self.tab_cmp = ttk.Frame(self.nb, padding=12)
         for f, t in [(self.tab_setup, "Setup"), (self.tab_pipe, "Pipeline"),
-                     (self.tab_res, "Results"), (self.tab_hist, "History"), (self.tab_cmp, "Compare")]:
+                     (self.tab_res, "Results"), (self.tab_pr, "PR Status"),
+                     (self.tab_out, "Outliers"), (self.tab_hist, "History"),
+                     (self.tab_cmp, "Compare")]:
             self.nb.add(f, text=t)
         self._build_setup()
         self._build_pipeline()
         self._build_results()
+        self._build_pr_status()
+        self._build_outliers()
         self._build_history()
         self._build_compare()
 
@@ -355,6 +367,199 @@ class CertiApp:
         for h, bg in HEALTH_BG.items():
             tv.tag_configure(h, background=bg)
         return tv
+
+    # ---- PR Status (consolidated Table 1) ----
+    def _pr_records(self) -> list:
+        """Records to consolidate: History multi-selection, else every batch."""
+        ids = []
+        if hasattr(self, "tv_hist") and hasattr(self, "_hist_ids"):
+            ids = [self._hist_ids[i] for i in self.tv_hist.selection() if i in self._hist_ids]
+        if not ids:
+            ids = [row["id"] for row in runs.read_index(self.runs_root)]
+        recs = [runs.read_run_record(self.runs_root, i) for i in ids]
+        return [r for r in recs if r]
+
+    def _build_pr_status(self):
+        tk, ttk = self.tk, self.ttk
+        f = self.tab_pr
+        self.pr_basis = getattr(self, "pr_basis", "w1")
+        bar = ttk.Frame(f); bar.pack(fill="x", pady=(0, 6))
+        ttk.Label(bar, text="Consolidated PR — all batches (or select rows in History first)",
+                  style="Sec.TLabel").pack(side="left")
+        ttk.Button(bar, text="Build", command=self._render_pr_status).pack(side="right")
+        ttk.Button(bar, text="Export CSV", command=self._export_pr_csv).pack(side="right", padx=6)
+        self.pr_basis_var = tk.StringVar(value=self.pr_basis)
+        seg = ttk.Frame(bar); seg.pack(side="right", padx=10)
+        ttk.Label(seg, text="PR:", style="Muted.TLabel").pack(side="left")
+        for key, txt in (("base", "Base"), ("w1", "+Waiver1")):
+            ttk.Radiobutton(seg, text=txt, value=key, variable=self.pr_basis_var,
+                            command=self._on_pr_basis).pack(side="left")
+        wrap = ttk.Frame(f); wrap.pack(fill="both", expand=True)
+        self.pr_canvas = tk.Canvas(wrap, highlightthickness=0, bg=self.palette["BG"])
+        sb = ttk.Scrollbar(wrap, orient="vertical", command=self.pr_canvas.yview)
+        self.pr_body = ttk.Frame(self.pr_canvas)
+        self.pr_body.bind("<Configure>",
+                          lambda e: self.pr_canvas.configure(scrollregion=self.pr_canvas.bbox("all")))
+        self.pr_canvas.create_window((0, 0), window=self.pr_body, anchor="nw")
+        self.pr_canvas.configure(yscrollcommand=sb.set)
+        self.pr_canvas.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+
+    def _on_pr_basis(self):
+        self.pr_basis = self.pr_basis_var.get()
+        self._render_pr_status()
+
+    def _render_pr_status(self):
+        tk = self.tk
+        for w in self.pr_body.winfo_children():
+            w.destroy()
+        records = self._pr_records()
+        if not records:
+            tk.Label(self.pr_body, text="No batches yet. Run one in Setup (or select rows in History), then Build.",
+                     bg=self.palette["BG"], fg=self.palette["MUTE"]).grid(row=0, column=0, sticky="w")
+            return
+        piv = _consolidate.consolidate_pr(records, basis=self.pr_basis)
+        cols, rows, cells = piv["columns"], piv["rows"], piv["cells"]
+        HEAD, INK, CARD = self.palette["HEAD"], self.palette["INK"], self.palette["CARD"]
+        tk.Label(self.pr_body, text="Data_Type", bg=HEAD, fg="#ffffff", anchor="w",
+                 font=("DejaVu Sans", 10, "bold"), padx=10, pady=6).grid(row=0, column=0, sticky="nsew", padx=1, pady=1)
+        for ci, col in enumerate(cols):
+            hdr = f"{col['batch_id']}\n{col['vt']}·{col['libtype']} · {short_corner(col['corner'])}"
+            tk.Label(self.pr_body, text=hdr, bg=HEAD, fg="#ffffff",
+                     font=("DejaVu Sans", 8, "bold"), padx=6, pady=4).grid(row=0, column=ci + 1, sticky="nsew", padx=1, pady=1)
+        r, last_cls = 1, None
+        for row in rows:
+            if row["cls"] != last_cls:
+                sec = "CONS · hold arcs" if row["cls"] == "cons" else "NON_CONS · delay·slew arcs"
+                tk.Label(self.pr_body, text=sec, bg="#dde5ee", fg=INK, anchor="w",
+                         font=("DejaVu Sans", 9, "bold"), padx=10, pady=3).grid(
+                    row=r, column=0, columnspan=len(cols) + 1, sticky="nsew", padx=1, pady=1)
+                r += 1; last_cls = row["cls"]
+            tk.Label(self.pr_body, text=row["label"], bg=CARD, fg=INK, anchor="w",
+                     padx=10, pady=4).grid(row=r, column=0, sticky="nsew", padx=1, pady=1)
+            for ci in range(len(cols)):
+                cell = cells[(row["label"], ci)]
+                cls = _COLOR2CLS.get(cell["color"], "na")
+                tk.Label(self.pr_body, text=fmt_pr(cell["pr"]), bg=PR_BG[cls], fg=PR_FG[cls],
+                         font=("DejaVu Sans", 10, "bold"), padx=8, pady=4).grid(
+                    row=r, column=ci + 1, sticky="nsew", padx=1, pady=1)
+            r += 1
+
+    def _export_pr_csv(self):
+        from tkinter import filedialog, messagebox
+        import csv as _csv
+        records = self._pr_records()
+        if not records:
+            return messagebox.showinfo("Export", "No batches to export.")
+        piv = _consolidate.consolidate_pr(records, basis=getattr(self, "pr_basis", "w1"))
+        path = filedialog.asksaveasfilename(defaultextension=".csv", initialfile="pr_status.csv")
+        if not path:
+            return
+        cols = piv["columns"]
+        with open(path, "w", newline="") as fh:
+            w = _csv.writer(fh)
+            w.writerow(["Data_Type", "Class"] +
+                       [f"{c['batch_id']}|{c['vt']}|{c['libtype']}|{c['corner']}" for c in cols])
+            for row in piv["rows"]:
+                line = [row["label"], row["cls"]]
+                for ci in range(len(cols)):
+                    pr = piv["cells"][(row["label"], ci)]["pr"]
+                    line.append("" if pr is None else f"{pr:.1f}")
+                w.writerow(line)
+        messagebox.showinfo("Export", f"Wrote {path}")
+
+    # ---- Outliers (Table 2) + scatter drill-down ----
+    def _build_outliers(self):
+        ttk = self.ttk
+        f = self.tab_out
+        bar = ttk.Frame(f); bar.pack(fill="x", pady=(0, 6))
+        ttk.Label(bar, text="Sub-95% points — double-click a row for the outlier scatter",
+                  style="Sec.TLabel").pack(side="left")
+        ttk.Button(bar, text="Build", command=self._render_outliers).pack(side="right")
+        cols = ["Metric", "Class", "Batch · Corner", "PR%", "#cells", "Polarity", "WorstErr(ps)", "RelErr%"]
+        self.tv_out = ttk.Treeview(f, columns=cols, show="headings", selectmode="browse")
+        for c in cols:
+            self.tv_out.heading(c, text=c)
+            self.tv_out.column(c, width=104, anchor="center")
+        self.tv_out.column("Metric", width=150, anchor="w")
+        self.tv_out.column("Batch · Corner", width=210, anchor="w")
+        self.tv_out.pack(fill="both", expand=True)
+        self.tv_out.bind("<Double-1>", self._open_scatter_selected)
+        self._out_meta: dict = {}
+
+    def _render_outliers(self):
+        self.tv_out.delete(*self.tv_out.get_children())
+        self._out_meta = {}
+        basis = getattr(self, "pr_basis", "w1")
+        for rec in self._pr_records():
+            rid = rec.get("id")
+            bid = rec.get("batch_id") or rec.get("name", "?")
+            bdir = runs.batch_dir(self.runs_root, rid) if rid else None
+            sig = {(s["corner"], s["type"]): s for s in rec.get("sigma", [])}
+            mom = {(m["corner"], m["type"]): m for m in rec.get("moments", [])}
+            for prow in _consolidate.PR_ROWS:
+                corners = sorted({c for (c, t) in list(sig) + list(mom) if t == prow["type"]})
+                for corner in corners:
+                    s, m = sig.get((corner, prow["type"])), mom.get((corner, prow["type"]))
+                    pr = _consolidate._value(prow["metric"], basis, s, m)
+                    if pr is None or pr >= _consolidate.GREEN_LOW:
+                        continue
+                    br = {"n_outlier_cells": "?", "polarity": "?", "worst_err_ps": None, "worst_rel_pct": None}
+                    if bdir is not None:
+                        csvp = _perarc.find_per_arc_csv(bdir, corner, prow["type"], prow["metric"])
+                        if csvp:
+                            br = _outliers.outlier_breakdown(_perarc.load_rows(csvp), prow["metric"])
+                    iid = self.tv_out.insert("", "end", values=(
+                        prow["label"], prow["cls"], f"{bid} · {short_corner(corner)}", f"{pr:.1f}",
+                        br.get("n_outlier_cells", "?"), br.get("polarity", "?"),
+                        "" if br.get("worst_err_ps") is None else f"{br['worst_err_ps']:.2f}",
+                        "" if br.get("worst_rel_pct") is None else f"{br['worst_rel_pct']:.1f}"))
+                    self._out_meta[iid] = (rid, corner, prow["type"], prow["metric"],
+                                           f"{prow['label']} — {bid} · {short_corner(corner)}")
+
+    def _open_scatter_selected(self, _evt=None):
+        sel = self.tv_out.selection()
+        if not sel:
+            return
+        meta = self._out_meta.get(sel[0])
+        if meta:
+            self._open_scatter(*meta)
+
+    def _open_scatter(self, rid, corner, row_type, metric, label):
+        tk = self.tk
+        from tkinter import messagebox
+        if not rid:
+            return messagebox.showinfo("Scatter", "No batch directory for this point.")
+        csvp = _perarc.find_per_arc_csv(runs.batch_dir(self.runs_root, rid), corner, row_type, metric)
+        if not csvp:
+            return messagebox.showinfo("Scatter", "Per-arc data not found for this point.")
+        pts = _perarc.scatter_points(_perarc.load_rows(csvp), metric)
+        if not pts:
+            return messagebox.showinfo("Scatter", "No covered arcs to plot.")
+        W, H, pad = 580, 480, 60
+        win = tk.Toplevel(self.root)
+        win.title(f"Outlier scatter — {label}")
+        cv = tk.Canvas(win, width=W, height=H, bg="#ffffff", highlightthickness=0)
+        cv.pack(fill="both", expand=True)
+        xs = [p[0] for p in pts] + [p[1] for p in pts]
+        lo, hi = min(xs), max(xs)
+        if hi <= lo:
+            hi = lo + 1.0
+        sx = lambda v: pad + (v - lo) / (hi - lo) * (W - 2 * pad)
+        sy = lambda v: H - pad - (v - lo) / (hi - lo) * (H - 2 * pad)
+        cv.create_line(pad, H - pad, W - pad, H - pad, fill="#888")     # x axis
+        cv.create_line(pad, H - pad, pad, pad, fill="#888")             # y axis
+        cv.create_line(sx(lo), sy(lo), sx(hi), sy(hi), fill="#9ec5fe", dash=(4, 3))  # y=x
+        cv.create_text(W // 2, H - 20, text=f"MC {metric}", fill="#444")
+        cv.create_text(W // 2, 18, text=f"{label}   (n={len(pts)}, red = outlier)",
+                       fill="#222", font=("DejaVu Sans", 10, "bold"))
+        info = cv.create_text(W // 2, 38, text="click a point for its arc", fill="#777",
+                              font=("DejaVu Sans", 8))
+        for mc, lib, is_out, arc in pts:
+            x, y, rr = sx(mc), sy(lib), 3
+            oid = cv.create_oval(x - rr, y - rr, x + rr, y + rr,
+                                 fill=("#dc2626" if is_out else "#94a3b8"), outline="")
+            cv.tag_bind(oid, "<Button-1>", lambda e, a=arc: cv.itemconfigure(info, text=a))
 
     def _build_history(self):
         ttk = self.ttk
