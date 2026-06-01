@@ -1,6 +1,8 @@
-"""outlier_breakdown: cells / polarity / worst-error from per-arc rows."""
+"""outlier_breakdown: cells / polarity / worst-error from per-arc rows + rankings."""
 
-from cert_data_process.analysis.outliers import outlier_breakdown
+from cert_data_process.analysis.outliers import (
+    outlier_breakdown, arc_indices, rank_by_cell, rank_by_table_point, worst_arcs,
+)
 
 
 def _arc(cell, mc, lib, status):
@@ -33,3 +35,32 @@ def test_outlier_breakdown_all_pass_is_empty():
     assert r["n_outlier_cells"] == 0
     assert r["worst_err_ps"] is None
     assert r["polarity"] == "none"
+
+
+def _a(cell, i1, i2, mc, lib, status):
+    return {"Arc": f"combinational_{cell}_Z_rise_A_rise_NO_CONDITION_{i1}_{i2}",
+            "Late_Sigma_MC_value": str(mc), "Late_Sigma_Lib_value": str(lib),
+            "Late_Sigma_Final_Status": status}
+
+
+def test_arc_indices():
+    assert arc_indices("combinational_INV_Z_rise_A_rise_NO_CONDITION_3_5") == ("3", "5")
+    assert arc_indices("weird") == ("", "")
+
+
+def test_rank_by_cell_orders_by_failcount_then_worst():
+    rows = [_a("A", 3, 5, 40, 38, "Fail"), _a("A", 3, 6, 40, 39, "Fail"),
+            _a("B", 3, 5, 50, 70, "Fail"), _a("C", 1, 1, 10, 10, "Pass")]
+    r = rank_by_cell(rows, "Late_Sigma")
+    assert r[0]["cell"] == "A" and r[0]["n_fail"] == 2
+    assert {x["cell"] for x in r} == {"A", "B"}
+    assert r[1]["cell"] == "B" and round(r[1]["worst_rel_pct"], 0) == 40
+
+
+def test_rank_by_table_point_and_worst_arcs():
+    rows = [_a("A", 3, 5, 40, 38, "Fail"), _a("B", 3, 5, 50, 70, "Fail"),
+            _a("C", 7, 7, 10, 10, "Pass")]
+    tp = rank_by_table_point(rows, "Late_Sigma")
+    assert tp[0]["index1"] == "3" and tp[0]["index2"] == "5" and tp[0]["n_fail"] == 2
+    w = worst_arcs(rows, "Late_Sigma", top=5)
+    assert w[0]["cell"] == "B" and w[0]["direction"] == "pessimistic" and round(w[0]["rel_pct"]) == 40
