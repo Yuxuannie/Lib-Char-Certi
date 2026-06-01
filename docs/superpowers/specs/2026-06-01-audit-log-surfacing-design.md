@@ -1,8 +1,14 @@
-# Design Spec — Pipeline Audit (live log surfacing)
+# Design Spec — Pipeline Audit (live log surfacing) + Outlier Analysis Enrichment
 
 **Date:** 2026-06-01
 **Status:** APPROVED (brainstorming) — ready for implementation plan
 **Author:** Claude (superpowers brainstorming)
+
+> This spec covers **two** related deliverables, to be planned and executed together:
+> **Part A — Pipeline Audit** (§0–§7): surface high-signal findings into the log window live.
+> **Part B — Outlier Analysis Enrichment** (§8): turn the bare scatter into a drill-down
+> analysis panel with rankings + professional matplotlib plots, so a failing PR point
+> leads the user to a conclusion (which cells / table points / arcs, and how bad).
 
 ---
 
@@ -103,3 +109,70 @@ In **`cli.py:execute_stages`** (shared by CLI + GUI executor):
 - Consistency: one `Finding` type flows from `audit_stage` → `format_block`/`write_report`/`summarize` → window/file/banner; severity tags reuse the existing `err`/`warn`/`ok` log tags.
 - Scope: single module + thin glue in 3 existing files; testable in isolation; not a multi-subsystem effort.
 - Ambiguity: `NO_DATA` classified **error** (a metric with zero data is a real problem), `LOW_COVERAGE` **warn** — stated explicitly in §2.4.
+
+---
+
+# Part B — Outlier Analysis Enrichment
+
+## 8.0 Problem
+The current Outliers drill-down opens a single lib-vs-MC scatter. Because every point hugs the
+y=x diagonal, it's visually fine but does **not** help the user converge to a conclusion: *which*
+cells dominate the failures, whether they're localized to specific slew/load table points, how bad
+the worst arcs are, and whether the errors are risky-optimistic or safe-pessimistic. The plot is also
+a hand-drawn Tk Canvas — not professional/high-resolution.
+
+## 8.1 Ranking functions (pure, in `analysis/outliers.py`)
+Computed from the same per-arc rows `perarc.load_rows` already returns; the `Arc` string carries
+cell (`parts[1]`) and the integer table indices (`parts[-2]`, `parts[-1]`).
+
+- `rank_by_cell(rows, metric) -> list[dict]` — one row per **cell** that has ≥1 failing arc:
+  `{cell, n_fail, n_total, worst_rel_pct, worst_err_ps, polarity}`, sorted by `n_fail` desc then
+  `worst_rel_pct` desc. *Answers "a few cells or spread everywhere?"*
+- `rank_by_table_point(rows, metric) -> list[dict]` — one row per **(index1, index2)** grid point
+  with ≥1 failing arc: `{index1, index2, n_fail, worst_rel_pct, worst_err_ps}`, same sort.
+  *Answers "localized to specific slew/load conditions (systematic) or scattered (random)?"*
+- `worst_arcs(rows, metric, top=20) -> list[dict]` — the worst individual failing arcs:
+  `{arc, cell, index1, index2, mc, lib, abs_err_ps, rel_pct, direction}`, sorted by `rel_pct` desc.
+
+All three reuse the existing helpers (`_f`, `_is_pass`, cell parse) and an arc-index parser
+`arc_indices(arc) -> (index1, index2)`. Pure → unit-tested with synthetic rows.
+
+## 8.2 Professional plots (`analysis/plots.py`, matplotlib, no pyplot)
+matplotlib is an established host dependency (legacy `check_sigma`/`check_moments`/`FullTablePass`
+use it). Build figures with `from matplotlib.figure import Figure` (NOT `pyplot`, to avoid global
+state) so the same function renders headlessly (Agg, for tests) and embedded (TkAgg, in the app).
+
+- `metric_unit(metric) -> str` — `"ps"` for Nominal/Early_Sigma/Late_Sigma/Std/Meanshift; `""`
+  (dimensionless) for Skew.
+- `build_scatter_figure(points, metric, mode="lib_vs_mc", highlight=None, rel_threshold=None) -> Figure`:
+  - **`lib_vs_mc`**: x=`MC {metric} ({unit})`, y=`Lib {metric} ({unit})`; y=x reference line; a shaded
+    **rel-error band** (±`rel_threshold`) around y=x; passing arcs gray, outliers red; `highlight`
+    (a set of arcs) drawn larger/outlined.
+  - **`residual`**: x=`MC {metric} ({unit})`, y=`Rel error (%)`; zero line + ±threshold lines; reveals
+    systematic trends the diagonal hides.
+  - Professional styling: title (`{label}  n={n}`), axis labels **with units**, light grid, tight
+    layout, `figsize≈(6,5)`, `dpi=120` on screen.
+- `save_figure(fig, path, dpi=200)` — high-resolution PNG export.
+
+## 8.3 Enriched drill-down panel (`app/gui.py`)
+Double-clicking an Outliers row opens a detail `Toplevel` (replaces the bare Canvas popup):
+- **Left:** the matplotlib figure via `FigureCanvasTkAgg` + `NavigationToolbar2Tk` (zoom/pan/save),
+  plus a **mode toggle** (`Lib vs MC` / `Residual`) and a **Save PNG** button (`save_figure`, dpi=200).
+- **Right:** three ranked `ttk.Treeview`s — **Top cells**, **Top table points**, **Worst arcs**
+  (from §8.1). Selecting a row sets `highlight` (that cell's arcs, or that index pair's arcs, or the
+  one arc) and **redraws the figure** with those points emphasized.
+- **Fallback:** if matplotlib import fails, fall back to the existing hand-drawn Canvas scatter and
+  still show the three ranked lists, so the panel degrades gracefully (never crashes).
+
+## 8.4 Testing (Part B)
+- `tests/test_outliers.py` (extend): `rank_by_cell` / `rank_by_table_point` / `worst_arcs` ordering,
+  counts, polarity, and `arc_indices` parsing on synthetic rows.
+- `tests/test_plots.py` (new, headless): `matplotlib.use("Agg")`; `build_scatter_figure` for both
+  modes returns a `Figure`; `save_figure` writes a non-empty PNG; `metric_unit` mapping.
+- GUI smoke (extend): under mocked Tk, the detail panel builds (matplotlib calls are real but
+  Agg-safe via the pure figure function; the TkAgg embed is guarded/fallback under mock).
+
+## 8.5 Dependencies & out-of-scope (Part B)
+- **Dependency:** matplotlib (host-present; guarded import with Canvas fallback).
+- **Out of scope:** 3-D / interactive-web plots; exporting all corners at once (single-point export
+  only); auto-clustering of outliers (rankings are explicit, not ML).
