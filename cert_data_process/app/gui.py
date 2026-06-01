@@ -529,6 +529,8 @@ class CertiApp:
             self._open_scatter(*meta)
 
     def _open_scatter(self, rid, corner, row_type, metric, label):
+        """Open the enriched outlier drill-down panel (matplotlib + rankings).
+        Falls back to the Canvas scatter if matplotlib is unavailable."""
         tk = self.tk
         from tkinter import messagebox
         if not rid:
@@ -536,9 +538,93 @@ class CertiApp:
         csvp = _perarc.find_per_arc_csv(runs.batch_dir(self.runs_root, rid), corner, row_type, metric)
         if not csvp:
             return messagebox.showinfo("Scatter", "Per-arc data not found for this point.")
-        pts = _perarc.scatter_points(_perarc.load_rows(csvp), metric)
+        rows = _perarc.load_rows(csvp)
+        pts = _perarc.scatter_points(rows, metric)
         if not pts:
             return messagebox.showinfo("Scatter", "No covered arcs to plot.")
+        try:
+            from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+            from ..analysis import plots as _plots
+        except Exception:
+            return self._open_scatter_canvas(pts, label, metric)
+        self._open_scatter_mpl(label, metric, rows, pts, FigureCanvasTkAgg, NavigationToolbar2Tk, _plots)
+
+    def _open_scatter_mpl(self, label, metric, rows, pts, FigureCanvasTkAgg, NavToolbar, plots):
+        """Enriched panel: matplotlib scatter + ranked lists + residual toggle + Save PNG."""
+        tk, ttk = self.tk, self.ttk
+        from ..analysis import outliers as _o
+        win = tk.Toplevel(self.root)
+        win.title(f"Outlier analysis — {label}")
+        state = {"mode": "lib_vs_mc", "highlight": set()}
+        left = ttk.Frame(win); left.pack(side="left", fill="both", expand=True)
+        right = ttk.Frame(win, padding=6); right.pack(side="right", fill="y")
+        bar = ttk.Frame(left); bar.pack(fill="x")
+        mode_var = tk.StringVar(value="lib_vs_mc")
+        holder = {"canvas": None, "toolbar": None, "fig": None}
+
+        def redraw():
+            if holder["canvas"]:
+                holder["canvas"].get_tk_widget().destroy()
+            if holder["toolbar"]:
+                holder["toolbar"].destroy()
+            fig = plots.build_scatter_figure(pts, metric, mode=state["mode"],
+                                             highlight=state["highlight"], rel_threshold=0.03)
+            c = FigureCanvasTkAgg(fig, master=left)
+            c.draw()
+            tb = NavToolbar(c, left)
+            tb.update()
+            c.get_tk_widget().pack(fill="both", expand=True)
+            holder.update(canvas=c, toolbar=tb, fig=fig)
+
+        def set_mode():
+            state["mode"] = mode_var.get()
+            redraw()
+
+        for key, txt in (("lib_vs_mc", "Lib vs MC"), ("residual", "Residual")):
+            ttk.Radiobutton(bar, text=txt, value=key, variable=mode_var,
+                            command=set_mode).pack(side="left", padx=4)
+
+        def save_png():
+            from tkinter import filedialog
+            p = filedialog.asksaveasfilename(defaultextension=".png", initialfile="outliers.png")
+            if p and holder["fig"]:
+                plots.save_figure(holder["fig"], p, dpi=200)
+
+        ttk.Button(bar, text="Save PNG", command=save_png).pack(side="right", padx=4)
+
+        def add_table(title, cols, data, arcs_for):
+            ttk.Label(right, text=title, style="Sec.TLabel").pack(anchor="w", pady=(6, 0))
+            tv = ttk.Treeview(right, columns=cols, show="headings", height=6, selectmode="browse")
+            for c in cols:
+                tv.heading(c, text=c)
+                tv.column(c, width=88, anchor="center")
+            for d in data:
+                tv.insert("", "end", values=tuple(
+                    d.get(c.lower().replace(" ", "_"), d.get(c, "")) for c in cols))
+            tv.pack(fill="x")
+            def on_sel(_e, _tv=tv, _data=data, _af=arcs_for):
+                sel = _tv.selection()
+                if sel:
+                    idx = _tv.index(sel[0])
+                    state["highlight"] = _af(_data[idx])
+                    redraw()
+            tv.bind("<<TreeviewSelect>>", on_sel)
+
+        cells = _o.rank_by_cell(rows, metric)
+        tps = _o.rank_by_table_point(rows, metric)
+        worst = _o.worst_arcs(rows, metric, top=20)
+        arcset = lambda pred: {a for (_mc, _lib, _o2, a) in pts if pred(a)}
+        add_table("Top cells", ["cell", "n_fail", "worst_rel_pct"], cells,
+                  lambda d: arcset(lambda a: _o._cell_of(a) == d["cell"]))
+        add_table("Top table points", ["index1", "index2", "n_fail"], tps,
+                  lambda d: arcset(lambda a: _o.arc_indices(a) == (d["index1"], d["index2"])))
+        add_table("Worst arcs", ["cell", "rel_pct", "direction"], worst,
+                  lambda d: {d["arc"]})
+        redraw()
+
+    def _open_scatter_canvas(self, pts, label, metric):
+        """Fallback Canvas scatter when matplotlib is unavailable."""
+        tk = self.tk
         W, H, pad = 580, 480, 60
         win = tk.Toplevel(self.root)
         win.title(f"Outlier scatter — {label}")
@@ -550,10 +636,12 @@ class CertiApp:
             hi = lo + 1.0
         sx = lambda v: pad + (v - lo) / (hi - lo) * (W - 2 * pad)
         sy = lambda v: H - pad - (v - lo) / (hi - lo) * (H - 2 * pad)
-        cv.create_line(pad, H - pad, W - pad, H - pad, fill="#888")     # x axis
-        cv.create_line(pad, H - pad, pad, pad, fill="#888")             # y axis
-        cv.create_line(sx(lo), sy(lo), sx(hi), sy(hi), fill="#9ec5fe", dash=(4, 3))  # y=x
-        cv.create_text(W // 2, H - 20, text=f"MC {metric}", fill="#444")
+        cv.create_line(pad, H - pad, W - pad, H - pad, fill="#888")
+        cv.create_line(pad, H - pad, pad, pad, fill="#888")
+        cv.create_line(sx(lo), sy(lo), sx(hi), sy(hi), fill="#9ec5fe", dash=(4, 3))
+        from ..analysis.plots import metric_unit as _mu
+        unit = _mu(metric)
+        cv.create_text(W // 2, H - 20, text=f"MC {metric}" + (f" ({unit})" if unit else ""), fill="#444")
         cv.create_text(W // 2, 18, text=f"{label}   (n={len(pts)}, red = outlier)",
                        fill="#222", font=("DejaVu Sans", 10, "bold"))
         info = cv.create_text(W // 2, 38, text="click a point for its arc", fill="#777",

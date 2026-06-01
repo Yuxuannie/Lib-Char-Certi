@@ -68,6 +68,17 @@ def test_app_constructs_and_renders(tmp_path, fake_tk):
     for s_name, items in {"lib_join_sigma": sample[:1], "build_pr_table": sample[1:]}.items():
         for text, tag in _audit.format_block(s_name, items):
             app._log(text, tag)
+    # B3: exercise ranking + figure build headlessly (panel embedding needs a real display)
+    import matplotlib; matplotlib.use("Agg")
+    from cert_data_process.analysis import plots as _plots, outliers as _o
+    pts = [(40.0, 38.0, True, "combinational_A_Z_rise_A_rise_NO_CONDITION_3_5")]
+    assert _plots.build_scatter_figure(pts, "Late_Sigma", mode="residual", rel_threshold=0.03) is not None
+    test_rows = [{"Arc": pts[0][3], "Late_Sigma_MC_value": "40",
+                  "Late_Sigma_Lib_value": "38", "Late_Sigma_Final_Status": "Fail"}]
+    assert _o.rank_by_cell(test_rows, "Late_Sigma")[0]["cell"] == "A"
+    assert _o.arc_indices("combinational_A_Z_rise_A_rise_NO_CONDITION_3_5") == ("3", "5")
+    tps = _o.rank_by_table_point(test_rows, "Late_Sigma")
+    assert tps[0]["index1"] == "3" and tps[0]["index2"] == "5"
 
 
 def test_pr_status_and_outliers_render_with_a_real_record(tmp_path, fake_tk):
