@@ -136,9 +136,14 @@ def check_pass_with_waivers(row, type_name, param_name, mc_prefix='MC', lib_pref
         mc_value = row[f"{mc_prefix}_{param_name}"]
         lib_value = row[f"{lib_prefix}_{param_name}"]
 
-        # Get CI bounds
-        mc_ci_lb = row[f"{mc_prefix}_{param_name}_LB"]
-        mc_ci_ub = row[f"{mc_prefix}_{param_name}_UB"]
+        # Get CI bounds. Optional: Nominal has no MC_*_LB/UB columns, so it is a
+        # rel-error-only check and Waiver1 (CI enlargement) collapses to the base pass.
+        lb_key, ub_key = f"{mc_prefix}_{param_name}_LB", f"{mc_prefix}_{param_name}_UB"
+        if lb_key in row.index and ub_key in row.index:
+            mc_ci_lb = row[lb_key]
+            mc_ci_ub = row[ub_key]
+        else:
+            mc_ci_lb = mc_ci_ub = None
     except KeyError as e:
         logging.error(f"Missing column for {param_name}: {e}")
         return {
@@ -179,7 +184,9 @@ def check_pass_with_waivers(row, type_name, param_name, mc_prefix='MC', lib_pref
     # (Absolute-error / slew-based checking has been removed by request: pass is
     # now relative-error OR CI-bounds only.)
     if type_name == 'delay':
-        if param_name in ['Early_Sigma', 'Late_Sigma']:
+        if param_name == 'Nominal':
+            rel_threshold = 0.03  # nominal mirrors sigma 3%
+        elif param_name in ['Early_Sigma', 'Late_Sigma']:
             rel_threshold = 0.03  # 3% for sigma
         elif param_name == 'Meanshift':
             rel_threshold = 0.01  # 1% for moments meanshift
@@ -188,7 +195,9 @@ def check_pass_with_waivers(row, type_name, param_name, mc_prefix='MC', lib_pref
         else:  # Skew
             rel_threshold = 0.05  # 5% for moments skew
     elif type_name == 'slew':
-        if param_name in ['Early_Sigma', 'Late_Sigma']:
+        if param_name == 'Nominal':
+            rel_threshold = 0.06  # nominal mirrors slew sigma 6%
+        elif param_name in ['Early_Sigma', 'Late_Sigma']:
             rel_threshold = 0.06  # 6% for sigma
         elif param_name == 'Meanshift':
             rel_threshold = 0.02  # 2% for moments meanshift
@@ -197,15 +206,21 @@ def check_pass_with_waivers(row, type_name, param_name, mc_prefix='MC', lib_pref
         else:  # Skew
             rel_threshold = 0.10  # 10% for moments skew
     else:  # hold
-        rel_threshold = 0.03  # 3% for hold
+        rel_threshold = 0.03  # 3% for hold (incl. Nominal)
 
     # **CHECK 1: Relative-error Pass**
     rel_pass = abs(rel_err) <= rel_threshold
 
-    # **CHECK 2: CI Bounds Pass**
-    ci_lb = min(mc_ci_lb, mc_ci_ub)
-    ci_ub = max(mc_ci_lb, mc_ci_ub)
-    ci_bounds_pass = (ci_lb <= lib_value <= ci_ub)
+    # **CHECK 2: CI Bounds Pass** (skipped when CI bounds are absent, e.g. Nominal)
+    has_ci = (mc_ci_lb is not None and mc_ci_ub is not None
+              and not pd.isna(mc_ci_lb) and not pd.isna(mc_ci_ub))
+    if has_ci:
+        ci_lb = min(mc_ci_lb, mc_ci_ub)
+        ci_ub = max(mc_ci_lb, mc_ci_ub)
+        ci_bounds_pass = (ci_lb <= lib_value <= ci_ub)
+    else:
+        ci_lb = ci_ub = None
+        ci_bounds_pass = False
 
     # **BASE PASS = Check 1 OR Check 2**
     base_pass = rel_pass or ci_bounds_pass
@@ -216,12 +231,16 @@ def check_pass_with_waivers(row, type_name, param_name, mc_prefix='MC', lib_pref
     else:
         pass_reason = "fail"
 
-    # **WAIVER 1: CI Enlargement (6%)**
-    ci_width = abs(ci_ub - ci_lb)
-    ci_enlargement_amount = ci_width * 0.06  # 6% enlargement
-    enlarged_lb = ci_lb - ci_enlargement_amount
-    enlarged_ub = ci_ub + ci_enlargement_amount
-    waiver1_ci_enlarged = (enlarged_lb <= lib_value <= enlarged_ub)
+    # **WAIVER 1: CI Enlargement (6%)** — with no CI (Nominal), the only waiver
+    # path is the rel-error base pass itself.
+    if has_ci:
+        ci_width = abs(ci_ub - ci_lb)
+        ci_enlargement_amount = ci_width * 0.06  # 6% enlargement
+        enlarged_lb = ci_lb - ci_enlargement_amount
+        enlarged_ub = ci_ub + ci_enlargement_amount
+        waiver1_ci_enlarged = (enlarged_lb <= lib_value <= enlarged_ub)
+    else:
+        waiver1_ci_enlarged = bool(rel_pass)
 
     # **WAIVER 2: Determine Error Direction**
     error_direction = 'optimistic' if lib_value < mc_value else 'pessimistic'
