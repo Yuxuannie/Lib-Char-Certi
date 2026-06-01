@@ -67,6 +67,7 @@ class JobManager:
                 "id": batch_id, "name": name, "state": "queued",
                 "when_utc": when.isoformat(),
                 "stages": {s: "pending" for s in _STAGE_ORDER},
+                "findings": [],
                 "started_utc": None, "ended_utc": None, "error": None,
             }
         fut = self._pool.submit(self._run, batch_id, config, name, when.isoformat())
@@ -103,11 +104,16 @@ class JobManager:
     def status(self, batch_id: str) -> Optional[dict]:
         with self._lock:
             st = self._status.get(batch_id)
-            return dict(st, stages=dict(st["stages"])) if st else None
+            return dict(st, stages=dict(st["stages"]), findings=list(st.get("findings", []))) if st else None
 
     def all_status(self) -> list[dict]:
         with self._lock:
-            return [dict(st, stages=dict(st["stages"])) for st in self._status.values()]
+            return [dict(st, stages=dict(st["stages"]), findings=list(st.get("findings", [])))
+                    for st in self._status.values()]
+
+    def _add_findings(self, batch_id: str, items: list) -> None:
+        with self._lock:
+            self._status[batch_id].setdefault("findings", []).extend(items)
 
     # ---- internal ----
     def _set(self, batch_id: str, **kw) -> None:
@@ -125,8 +131,11 @@ class JobManager:
         def on_stage(stage_dict: dict) -> None:
             self._set_stage(batch_id, stage_dict.get("stage", ""), stage_dict.get("status", ""))
 
+        def on_finding(stage: str, items: list) -> None:
+            self._add_findings(batch_id, items)
+
         try:
-            stage_execution, _compat, _failed = execute_stages(config, on_stage=on_stage)
+            stage_execution, _compat, _failed = execute_stages(config, on_stage=on_stage, on_finding=on_finding)
             batch = summary.build_batch(config, stage_execution, batch_id=batch_id, name=name, when_utc=when_utc)
             runs.write_run_record(self.runs_root, batch_id, batch)
             runs.update_index(self.runs_root, summary.build_index_summary(batch))
