@@ -57,6 +57,23 @@ def test_wide_spread_figure_builds(tmp_path):
     assert p.exists() and p.stat().st_size > 1000
 
 
+def test_auto_log_recommended():
+    from cert_data_process.analysis.plots import auto_log_recommended
+    narrow = [(100.0, 100.2, True, "a"), (100.0, 90.0, True, "b")]
+    wide = [(100.0, 100.2, True, "a"), (100.0, 90.0, True, "b"), (10.0, 200.0, True, "c")]
+    assert auto_log_recommended(narrow, "abs_vs_rel") is False
+    assert auto_log_recommended(wide, "abs_vs_rel") is True
+    assert auto_log_recommended(wide, "lib_vs_mc") is False   # only abs_vs_rel
+
+
+def test_scale_param_forces_linear_or_log():
+    wide = [(100.0, 100.2, True, "a"), (100.0, 90.0, True, "b"), (10.0, 200.0, True, "c")]
+    # both should build without error; forcing linear must not raise on wide data
+    assert build_scatter_figure(wide, "Late_Sigma", mode="abs_vs_rel", scale="linear") is not None
+    assert build_scatter_figure(wide, "Late_Sigma", mode="abs_vs_rel", scale="symlog") is not None
+    assert build_scatter_figure(wide, "Late_Sigma", mode="abs_vs_rel", scale="auto") is not None
+
+
 def test_fig_reuse_clears_and_redraws():
     fig = build_scatter_figure(PTS, "Late_Sigma", mode="lib_vs_mc")
     again = build_scatter_figure(PTS, "Late_Sigma", mode="abs_vs_rel", fig=fig)

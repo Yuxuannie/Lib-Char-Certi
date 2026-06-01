@@ -718,7 +718,11 @@ class CertiApp:
         win = tk.Toplevel(self.root)
         win.title(f"Outlier analysis — {label}")
         win.geometry("1100x640")
-        state = {"mode": "lib_vs_mc", "highlight": set(), "opt_only": False}
+        # Default the rel-error scale to log only when the spread is wide; the user
+        # can switch Normal/Log freely below (only affects the Abs·Rel err mode).
+        auto_log = plots.auto_log_recommended(pts, "abs_vs_rel")
+        state = {"mode": "lib_vs_mc", "highlight": set(), "opt_only": False,
+                 "scale": "symlog" if auto_log else "linear"}
 
         # Draggable horizontal split: plot (left, weight 3) | rankings (right, weight 1)
         pw = ttk.PanedWindow(win, orient="horizontal")
@@ -731,6 +735,7 @@ class CertiApp:
         bar = ttk.Frame(left); bar.pack(fill="x")
         mode_var = tk.StringVar(value="lib_vs_mc")
         opt_var = tk.IntVar(value=0)
+        scale_var = tk.StringVar(value=state["scale"])
 
         fig = plots.build_scatter_figure(pts, metric, mode="lib_vs_mc", rel_threshold=0.03)
         canvas = FigureCanvasTkAgg(fig, master=left)
@@ -742,7 +747,8 @@ class CertiApp:
         def redraw():
             plots.build_scatter_figure(
                 pts, metric, mode=state["mode"], highlight=state["highlight"],
-                rel_threshold=0.03, optimistic_only=state["opt_only"], fig=holder["fig"])
+                rel_threshold=0.03, optimistic_only=state["opt_only"],
+                scale=state["scale"], fig=holder["fig"])
             canvas.draw_idle()
 
         def set_mode():
@@ -751,11 +757,18 @@ class CertiApp:
         def set_opt():
             state["opt_only"] = bool(opt_var.get()); redraw()
 
+        def set_scale():
+            state["scale"] = scale_var.get(); redraw()
+
         for key, txt in (("lib_vs_mc", "Lib vs MC"), ("abs_vs_rel", "Abs·Rel err")):
             ttk.Radiobutton(bar, text=txt, value=key, variable=mode_var,
                             command=set_mode).pack(side="left", padx=4)
         ttk.Checkbutton(bar, text="Optimistic only", variable=opt_var,
                         command=set_opt).pack(side="left", padx=10)
+        ttk.Label(bar, text="Scale:").pack(side="left", padx=(10, 0))
+        for key, txt in (("linear", "Normal"), ("symlog", "Log")):
+            ttk.Radiobutton(bar, text=txt, value=key, variable=scale_var,
+                            command=set_scale).pack(side="left")
 
         def save_png():
             from tkinter import filedialog
@@ -811,7 +824,7 @@ class CertiApp:
     def _show_arc_detail(self, d, metric):
         """Popup with the full numbers for one outlier arc (MC, Lib, errors, direction)."""
         tk = self.tk
-        from .analysis.plots import metric_unit
+        from ..analysis.plots import metric_unit
         unit = metric_unit(metric) or "ps"
         win = tk.Toplevel(self.root)
         win.title(f"Arc detail — {d.get('cell', '')}")

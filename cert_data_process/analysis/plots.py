@@ -52,8 +52,18 @@ def _needs_symlog(values, ratio: float = 100.0):
     return max(mags[0], 0.1)
 
 
+def auto_log_recommended(points, mode="abs_vs_rel") -> bool:
+    """True when the rel-error spread is wide enough that log (symlog) helps.
+    The GUI uses this to set the Log-scale toggle's initial state; the user can
+    still override. Only meaningful for the abs_vs_rel mode."""
+    if mode != "abs_vs_rel":
+        return False
+    _xs, ys = _coords(points, mode)
+    return _needs_symlog(ys) is not None
+
+
 def build_scatter_figure(points, metric, mode="lib_vs_mc", highlight=None,
-                         rel_threshold=None, optimistic_only=False, fig=None):
+                         rel_threshold=None, optimistic_only=False, scale="auto", fig=None):
     """Build / refresh a professional outlier scatter Figure.
 
     Args:
@@ -88,14 +98,20 @@ def build_scatter_figure(points, metric, mode="lib_vs_mc", highlight=None,
             ax.axhline(-rel_threshold * 100, color="#f97316", ls="--", lw=0.9, zorder=1)
         ax.set_xlabel(f"Signed error Lib-MC ({metric_unit(metric) or 'ps'})  [optimistic < 0]", fontsize=10)
         ax.set_ylabel("Rel error (%)  [optimistic < 0]", fontsize=10)
-        # Wide rel-error spread -> symlog so small and huge outliers are both readable.
-        lt = _needs_symlog(ys)
-        if lt:
-            ax.set_yscale("symlog", linthresh=lt)
+        # Scale: "linear" forces linear, "symlog" forces symlog, "auto" uses symlog
+        # only when the spread is wide (so small + huge outliers are both readable).
+        if scale == "linear":
+            use_log = False
+        elif scale == "symlog":
+            use_log = True
+        else:
+            use_log = _needs_symlog(ys) is not None
+        if use_log:
+            ax.set_yscale("symlog", linthresh=_needs_symlog(ys) or 0.1)
             ax.set_ylabel("Rel error (%, symlog)  [optimistic < 0]", fontsize=10)
-        ltx = _needs_symlog(xs)
-        if ltx:
-            ax.set_xscale("symlog", linthresh=ltx)
+            ltx = _needs_symlog(xs)
+            if ltx:
+                ax.set_xscale("symlog", linthresh=ltx)
     else:
         if xs and ys:
             lo = min(xs + ys)

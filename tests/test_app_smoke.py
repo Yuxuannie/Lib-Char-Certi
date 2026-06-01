@@ -83,6 +83,12 @@ def test_app_constructs_and_renders(tmp_path, fake_tk):
     # audit report access (no file -> info dialog path, mocked)
     assert app._audit_report_path() is None
     app._open_audit_report()
+    # worst-arc detail popup (catches import-path / name errors in the handler)
+    app._show_arc_detail(
+        {"arc": "combinational_A_Z_rise_A_rise_NO_CONDITION_3_5", "cell": "A",
+         "index1": "3", "index2": "5", "mc": 40.0, "lib": 38.0,
+         "abs_err_ps": 2.0, "rel_pct": 5.0, "direction": "optimistic"},
+        "Late_Sigma")
 
 
 def test_pr_status_and_outliers_render_with_a_real_record(tmp_path, fake_tk):
