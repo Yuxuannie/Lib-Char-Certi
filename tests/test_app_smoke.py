@@ -99,6 +99,17 @@ def test_app_constructs_and_renders(tmp_path, fake_tk):
     assert app._offender_matches("combinational_B_Z_rise_A_rise_NO_CONDITION_3_5", off) is False
     app._common_key = "cell_table_point"
     assert app._offender_matches(arc, off) is True
+    # Voltage Margin Analysis tab render paths (failed + ok), under mocked tk
+    app._run_vm()  # no loaded_rec -> info dialog path, no crash
+    app._render_vm({"ok": False, "reason": "no_sigma_rpt_inputs", "out_dir": "/x", "stderr_tail": "boom"})
+    app._render_vm({
+        "ok": True, "out_dir": "/x",
+        "sensitivity_warnings": {"header": ["arc", "warning_code"],
+                                 "rows": [["B", "voltage_gap_exceeds_max"]]},
+        "summary": {"header": ["corner", "required_margin_mv"], "rows": [["c1", "12.3"]]},
+        "per_object": {"header": ["arc", "required_margin_mv"], "rows": [["A", "5.0"]]},
+        "optimistic_per_object": {"header": ["arc", "required_margin_mv"], "rows": [["A", "5.0"]]},
+    })
 
 
 def test_pr_status_and_outliers_render_with_a_real_record(tmp_path, fake_tk):

@@ -17,6 +17,7 @@ from ..web.executor import JobManager
 from ..analysis import consolidate as _consolidate
 from ..analysis import outliers as _outliers
 from ..analysis import perarc as _perarc
+from ..analysis import voltage_margin as _vm
 
 # consolidate_pr color band -> PR_BG/PR_FG key
 _COLOR2CLS = {"green": "hi", "amber": "mid", "red": "lo", "none": "na"}
@@ -198,12 +199,14 @@ class CertiApp:
         self.tab_pr = ttk.Frame(self.nb, padding=12)
         self.tab_out = ttk.Frame(self.nb, padding=12)
         self.tab_common = ttk.Frame(self.nb, padding=12)
+        self.tab_analysis = ttk.Frame(self.nb, padding=12)
         self.tab_hist = ttk.Frame(self.nb, padding=12)
         self.tab_cmp = ttk.Frame(self.nb, padding=12)
         for f, t in [(self.tab_setup, "Setup"), (self.tab_pipe, "Pipeline"),
                      (self.tab_res, "Results"), (self.tab_pr, "PR Status"),
                      (self.tab_out, "Outliers"), (self.tab_common, "Common"),
-                     (self.tab_hist, "History"), (self.tab_cmp, "Compare")]:
+                     (self.tab_analysis, "Analysis"), (self.tab_hist, "History"),
+                     (self.tab_cmp, "Compare")]:
             self.nb.add(f, text=t)
         self._build_setup()
         self._build_pipeline()
@@ -211,6 +214,7 @@ class CertiApp:
         self._build_pr_status()
         self._build_outliers()
         self._build_common()
+        self._build_analysis()
         self._build_history()
         self._build_compare()
 
@@ -935,6 +939,77 @@ class CertiApp:
             oid = cv.create_oval(x - rr, y - rr, x + rr, y + rr,
                                  fill=("#dc2626" if is_out else "#94a3b8"), outline="")
             cv.tag_bind(oid, "<Button-1>", lambda e, a=arc: cv.itemconfigure(info, text=a))
+
+    # ---- Analysis: Voltage Margin (Phase A) ----
+    def _build_analysis(self):
+        tk, ttk = self.tk, self.ttk
+        f = self.tab_analysis
+        bar = ttk.Frame(f); bar.pack(fill="x", pady=(0, 6))
+        ttk.Label(bar, text="Voltage Margin — runs the VM tool on the loaded batch's sigma rpts "
+                            "(needs corners spanning ≤15 mV gaps; open a batch in History first).",
+                  style="Sec.TLabel").pack(side="left")
+        self.btn_vm = ttk.Button(bar, text="▶ Run Voltage Margin", command=self._run_vm)
+        self.btn_vm.pack(side="right")
+        self.vm_status = ttk.Label(f, text="No run yet.", style="Muted.TLabel")
+        self.vm_status.pack(anchor="w", pady=(0, 6))
+        self.vm_body = ttk.Frame(f); self.vm_body.pack(fill="both", expand=True)
+
+    def _csv_table(self, parent, title, header, rows, max_rows=200):
+        ttk = self.ttk
+        if not header:
+            return
+        ttk.Label(parent, text=f"{title}  ({len(rows)} rows)", style="Sec.TLabel").pack(anchor="w", pady=(8, 2))
+        wrap = ttk.Frame(parent); wrap.pack(fill="both", expand=True)
+        tv = ttk.Treeview(wrap, columns=header, show="headings", height=8, selectmode="browse")
+        sb = ttk.Scrollbar(wrap, orient="vertical", command=tv.yview)
+        tv.configure(yscrollcommand=sb.set)
+        for c in header:
+            tv.heading(c, text=c)
+            tv.column(c, width=110, anchor="center")
+        for r in rows[:max_rows]:
+            tv.insert("", "end", values=r)
+        tv.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+
+    def _run_vm(self):
+        from tkinter import messagebox
+        rec = getattr(self, "loaded_rec", None)
+        if not rec or not rec.get("id"):
+            return messagebox.showinfo("Voltage Margin", "Open a batch in History/Results first.")
+        cfg = rec.get("config", {})
+        bdir = runs.batch_dir(self.runs_root, rec["id"])
+        self.vm_status.configure(text="Running Voltage Margin… (this can take a moment)")
+        self.btn_vm.configure(state="disabled")
+        self.root.update_idletasks()
+        try:
+            res = _vm.run_voltage_margin(bdir, cfg.get("corners", []), cfg.get("types", []))
+        finally:
+            self.btn_vm.configure(state="normal")
+        self._render_vm(res)
+
+    def _render_vm(self, res):
+        for w in self.vm_body.winfo_children():
+            w.destroy()
+        if not res.get("ok"):
+            self.vm_status.configure(text=f"Voltage Margin failed: {res.get('reason', 'unknown')}  "
+                                          f"(see {res.get('out_dir', '')})")
+            tail = res.get("stderr_tail") or res.get("stdout_tail") or ""
+            if tail:
+                t = self.tk.Text(self.vm_body, height=10, wrap="word", font=("DejaVu Sans Mono", 8))
+                t.insert("end", tail); t.configure(state="disabled"); t.pack(fill="both", expand=True)
+            return
+        warns = res.get("sensitivity_warnings", {}).get("rows", [])
+        n_gap = sum(1 for r in warns if "gap" in " ".join(r).lower())
+        self.vm_status.configure(
+            text=f"Voltage Margin OK → {res['out_dir']}   |   "
+                 f"sensitivity skips: {len(warns)} (≥15 mV gap or <2 points: {n_gap})")
+        summ = res.get("summary", {})
+        per = res.get("per_object", {})
+        opt = res.get("optimistic_per_object", {})
+        self._csv_table(self.vm_body, "Margin summary (all errors)", summ.get("header", []), summ.get("rows", []))
+        self._csv_table(self.vm_body, "Per-object margin — optimistic only (risk)",
+                        opt.get("header", []), opt.get("rows", []))
+        self._csv_table(self.vm_body, "Per-object margin (all)", per.get("header", []), per.get("rows", []))
 
     def _build_history(self):
         ttk = self.ttk
