@@ -127,7 +127,17 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help=f"Comma-separated type list. Supported values: {', '.join(SUPPORTED_TYPES)}.",
     )
-    parser.add_argument("--fmc-golden-dir", help="FMC log directory. Enables the Sigma pipeline when provided.")
+    parser.add_argument("--fmc-golden-dir", help="FMC deck directory (mode=decks). Enables the Sigma pipeline.")
+    parser.add_argument(
+        "--fmc-mode",
+        choices=("decks", "parsed_dfds", "parsed_scld"),
+        default="decks",
+        help="FMC input mode: decks (parse decks), parsed_dfds (already-parsed DFDS tables), parsed_scld (SCLD files).",
+    )
+    parser.add_argument(
+        "--fmc-input-dir",
+        help="Directory of already-parsed FMC tables (required for --fmc-mode parsed_dfds/parsed_scld).",
+    )
     parser.add_argument(
         "--full-mc-golden-dir",
         help="Full MC simulation directory. Enables the Moments pipeline when provided.",
@@ -276,9 +286,14 @@ def execute_stages(config, on_stage=None):
 
     if config.run_sigma:
         # Full MC is removed (G4): moments are derived from FMC data below.
+        # FMC input is mode-aware: parse decks, or ingest already-parsed DFDS/SCLD tables.
         _running("fmc_combine_data", "sigma")
-        print("[fmc_combine_data] running")
-        _done(run_fmc_combine_data(config))
+        print(f"[fmc_combine_data] running (mode={config.fmc_mode})")
+        if config.fmc_mode == "decks":
+            _done(run_fmc_combine_data(config))
+        else:
+            from .stages.fmc_ingest_parsed import run_fmc_ingest_parsed
+            _done(run_fmc_ingest_parsed(config))
 
         _running("lib_join_sigma", "sigma")
         print("[lib_join_sigma] running")
@@ -326,6 +341,8 @@ def run(argv: Optional[Iterable[str]] = None) -> int:
             lib_dir=args.lib_dir,
             output_dir=args.output_dir,
             full_mc_keep_raw_samples=args.full_mc_keep_raw_samples,
+            fmc_mode=args.fmc_mode,
+            fmc_input_dir=args.fmc_input_dir,
         )
     except ValueError as exc:
         parser.error(str(exc))

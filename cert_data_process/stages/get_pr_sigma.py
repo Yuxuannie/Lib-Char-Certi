@@ -45,7 +45,7 @@ def run_build_pr_table(config: CertDataProcessConfig) -> PrTableResult:
         "--corners",
         *list(config.corners),
         "--types",
-        *[t for t in config.types if t in {"delay", "slew", "hold"}],
+        *[t for t in config.types if t in {"delay", "slew", "hold", "mpw"}],
         "--log_level",
         "INFO",
     ]
@@ -61,7 +61,7 @@ def run_build_pr_table(config: CertDataProcessConfig) -> PrTableResult:
         f"script={script}",
         f"script_exists={script.is_file()}",
         f"requested_corners={','.join(config.corners)}",
-        f"requested_types={','.join([t for t in config.types if t in {'delay','slew','hold'}])}",
+        f"requested_types={','.join([t for t in config.types if t in {'delay','slew','hold','mpw'}])}",
         f"cmd={' '.join(cmd)}",
         "",
     ]

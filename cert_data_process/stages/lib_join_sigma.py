@@ -68,7 +68,8 @@ def _corner_for_csv(csv_name: str, corners: tuple[str, ...]) -> str | None:
 
 
 def _mode_for_csv(csv_name: str) -> str:
-    if csv_name.endswith("_hold.csv"):
+    # mpw is a constraint like hold: use the constraint (.cons) lib in Hold mode.
+    if csv_name.endswith("_hold.csv") or csv_name.endswith("_mpw.csv"):
         return "Hold"
     if csv_name.endswith("_delay.csv"):
         return "Delay"

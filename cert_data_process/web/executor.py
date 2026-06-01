@@ -55,6 +55,8 @@ class JobManager:
             full_mc_golden_dir=None,
             lib_dir=cfg.get("lib_dir", ""),
             output_dir=str(out_dir),
+            fmc_mode=cfg.get("fmc_mode", "decks"),
+            fmc_input_dir=cfg.get("fmc_input_dir") or None,
         )
 
         with self._lock:

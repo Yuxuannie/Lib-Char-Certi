@@ -539,7 +539,7 @@ def process_sigma_file_with_waivers(file_path, type_name):
         logging.error(f"Error processing {file_path}", exc_info=True)
         return None
 
-def generate_waiver_summary_table(results, root_path):
+def generate_waiver_summary_table(results, root_path, corners=None):
     """
     Generate summary table with 4 pass rate columns as per requirement
 
@@ -561,10 +561,18 @@ def generate_waiver_summary_table(results, root_path):
         'Late_Sigma_Base_PR', 'Late_Sigma_PR_with_Waiver1'] + cov_cols)
     hold_df = pd.DataFrame(columns=[
         'Corner', 'Late_Sigma_Base_PR', 'Late_Sigma_PR_with_Waiver1'] + cov_cols)
+    mpw_df = pd.DataFrame(columns=[
+        'Corner', 'Late_Sigma_Base_PR', 'Late_Sigma_PR_with_Waiver1'] + cov_cols)
 
-    # Extract corner name from file name (similar to existing function)
+    # Extract corner name from file name. Prefer matching one of the requested
+    # corners as a substring (robust for arbitrary corner naming, incl. SCLD like
+    # ssgnp_0p475v_0c_cworst_CCworst); fall back to the legacy regex.
     def extract_corner_from_filename(file_name):
-        """Extract full corner name from filename like fmc*ssgnp_0p450v_m40c*type*.rpt"""
+        """Extract full corner name from filename like fmc*<corner>*type*.rpt"""
+        if corners:
+            hits = [c for c in corners if c and c in file_name]
+            if hits:
+                return max(hits, key=len)
         base_name = file_name.replace('.rpt', '').replace('fmc_', '')
 
         import re
@@ -640,6 +648,8 @@ def generate_waiver_summary_table(results, root_path):
                 delay_df = pd.concat([delay_df, pd.DataFrame([new_row])], ignore_index=True)
             elif type_name == 'slew':
                 slew_df = pd.concat([slew_df, pd.DataFrame([new_row])], ignore_index=True)
+            elif type_name == 'mpw':
+                mpw_df = pd.concat([mpw_df, pd.DataFrame([new_row])], ignore_index=True)
             else:
                 hold_df = pd.concat([hold_df, pd.DataFrame([new_row])], ignore_index=True)
 
@@ -658,6 +668,8 @@ def generate_waiver_summary_table(results, root_path):
     summary += slew_df.to_string(index=False) if not slew_df.empty else "No slew data"
     summary += "\n\nHold:\n"
     summary += hold_df.to_string(index=False) if not hold_df.empty else "No hold data"
+    summary += "\n\nMPW:\n"
+    summary += mpw_df.to_string(index=False) if not mpw_df.empty else "No mpw data"
 
     # Save to file
     summary_file = os.path.join(root_path, "sigma_waiver_summary_table.txt")
@@ -671,7 +683,8 @@ def generate_waiver_summary_table(results, root_path):
     delay_df['Type'] = 'delay'
     slew_df['Type'] = 'slew'
     hold_df['Type'] = 'hold'
-    combined_df = pd.concat([delay_df, slew_df, hold_df], ignore_index=True)
+    mpw_df['Type'] = 'mpw'
+    combined_df = pd.concat([delay_df, slew_df, hold_df, mpw_df], ignore_index=True)
     combined_df.to_csv(csv_file, index=False)
     logging.info(f"Sigma PR CSV saved to: {csv_file}")
 
@@ -828,7 +841,7 @@ def main():
         logging.info("Generating sigma pass-rate outputs")
 
         # Generate summary table (Base_PR + PR_with_Waiver1 + coverage/Data_Health)
-        summary_file, csv_file = generate_waiver_summary_table(sigma_waiver_results, root_path)
+        summary_file, csv_file = generate_waiver_summary_table(sigma_waiver_results, root_path, corners=corners)
 
         logging.info(f"Sigma pass-rate summary table saved to: {summary_file}")
         logging.info(f"Sigma PR CSV saved to: {csv_file}")
