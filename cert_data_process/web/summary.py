@@ -66,6 +66,8 @@ def build_sigma_rows(out: Path) -> list[dict[str, Any]]:
         row = {
             "corner": d.get("Corner", ""),
             "type": d.get("Type", ""),
+            "nomBase": _num(d.get("Nominal_Base_PR")),
+            "nomW1": _num(d.get("Nominal_PR_with_Waiver1")),
             "eBase": _num(d.get("Early_Sigma_Base_PR")),
             "eW1": _num(d.get("Early_Sigma_PR_with_Waiver1")),
             "lBase": _num(d.get("Late_Sigma_Base_PR")),
