@@ -57,6 +57,8 @@ class JobManager:
             output_dir=str(out_dir),
             fmc_mode=cfg.get("fmc_mode", "decks"),
             fmc_input_dir=cfg.get("fmc_input_dir") or None,
+            vt_type=cfg.get("vt_type", ""),
+            rc_type=cfg.get("rc_type", ""),
         )
 
         with self._lock:

@@ -61,6 +61,27 @@ def _result(status, started_at, t0, processed, failures, log_lines, run_log, **e
                                    "reason": "Parsed-input ingest; parity validated by pass-rate correctness."})
 
 
+def _apply_vtrc(cands: list, config: CertDataProcessConfig, log_lines: list, ctx: str) -> list:
+    """Narrow file candidates by VT/RC token when the user set them.
+
+    Disambiguates a dir holding multiple VT (svt/elvt) or RC (cworst/cbest/...)
+    variants. Lenient: if a token matches no candidate (filenames may not carry
+    it), fall back to the unfiltered list and log the fallback rather than
+    dropping everything.
+    """
+    out = list(cands)
+    for label, token in (("vt", config.vt_type), ("rc", config.rc_type)):
+        token = (token or "").strip().lower()
+        if not token:
+            continue
+        narrowed = [p for p in out if token in p.name.lower()]
+        if narrowed:
+            out = narrowed
+        else:
+            log_lines.append(f"note: {label}_type='{token}' matched no file for {ctx}; ignoring this filter")
+    return out
+
+
 def _validate_dfds_header(path: Path, type_info: str) -> Optional[str]:
     try:
         with path.open(newline="", encoding="utf-8", errors="replace") as fh:
@@ -99,6 +120,7 @@ def run_fmc_ingest_parsed(config: CertDataProcessConfig) -> FmcIngestResult:
         for corner in config.corners:
             for type_info in config.types:
                 matches = [p for p in all_files if corner in p.name and type_info in p.name]
+                matches = _apply_vtrc(matches, config, log_lines, f"corner={corner} type={type_info}")
                 if not matches:
                     failures.append({"corner": corner, "type": type_info, "reason": "no_parsed_file",
                                      "detail": f"No DFDS csv with corner '{corner}' and type '{type_info}'"})
@@ -119,6 +141,7 @@ def run_fmc_ingest_parsed(config: CertDataProcessConfig) -> FmcIngestResult:
             cands = [p for p in all_files if corner in p.name and p.name.lower().startswith(group)]
             if not cands:
                 cands = [p for p in all_files if corner in p.name and group in p.name.lower()]
+            cands = _apply_vtrc(cands, config, log_lines, f"corner={corner} group={group}")
             return cands[0] if cands else None
 
         for corner in config.corners:

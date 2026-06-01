@@ -142,6 +142,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--full-mc-golden-dir",
         help="Full MC simulation directory. Enables the Moments pipeline when provided.",
     )
+    parser.add_argument(
+        "--vt-type",
+        default="",
+        help="Optional VT type (e.g. svt, elvt). Batch metadata; also disambiguates parsed FMC files when set.",
+    )
+    parser.add_argument(
+        "--rc-type",
+        default="",
+        help="Optional RC type (e.g. cworst, cbest, typical). Batch metadata; also disambiguates parsed FMC files.",
+    )
     parser.add_argument("--lib-dir", required=True, help="Directory containing .lib files.")
     parser.add_argument("--output-dir", required=True, help="Output directory for stable artifacts.")
     parser.add_argument(
@@ -343,6 +353,8 @@ def run(argv: Optional[Iterable[str]] = None) -> int:
             full_mc_keep_raw_samples=args.full_mc_keep_raw_samples,
             fmc_mode=args.fmc_mode,
             fmc_input_dir=args.fmc_input_dir,
+            vt_type=args.vt_type,
+            rc_type=args.rc_type,
         )
     except ValueError as exc:
         parser.error(str(exc))

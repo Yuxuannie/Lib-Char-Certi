@@ -32,6 +32,10 @@ class CertDataProcessConfig:
     # "parsed_dfds" (already-parsed DFDS tables), "parsed_scld" (SCLD files).
     fmc_mode: str = "decks"
     fmc_input_dir: Optional[Path] = None
+    # Optional metadata + parsed-file disambiguation (free-form):
+    # VT type e.g. svt/elvt; RC type e.g. cworst/cbest/typical.
+    vt_type: str = ""
+    rc_type: str = ""
 
     @property
     def run_sigma(self) -> bool:
@@ -93,6 +97,8 @@ def build_config(
     full_mc_keep_raw_samples: bool = False,
     fmc_mode: str = "decks",
     fmc_input_dir: Optional[str] = None,
+    vt_type: str = "",
+    rc_type: str = "",
 ) -> CertDataProcessConfig:
     """Build and validate a :class:`CertDataProcessConfig`."""
 
@@ -135,4 +141,6 @@ def build_config(
         full_mc_keep_raw_samples=full_mc_keep_raw_samples,
         fmc_mode=fmc_mode,
         fmc_input_dir=Path(fmc_input_dir) if fmc_input_dir else None,
+        vt_type=(vt_type or "").strip(),
+        rc_type=(rc_type or "").strip(),
     )

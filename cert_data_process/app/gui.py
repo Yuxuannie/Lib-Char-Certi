@@ -209,6 +209,15 @@ class CertiApp:
             self.type_vars[t] = var
             ttk.Checkbutton(tf, text=t, variable=var).pack(side="left", padx=6)
 
+        # VT / RC type (editable: pick a preset or type a custom value)
+        vrf = ttk.Frame(f); vrf.pack(fill="x", pady=4)
+        ttk.Label(vrf, text="VT type", width=16).pack(side="left")
+        self.cb_vt = ttk.Combobox(vrf, width=12, values=["", "svt", "elvt", "lvt", "ulvt"])
+        self.cb_vt.pack(side="left", padx=(0, 12))
+        ttk.Label(vrf, text="RC type", width=8).pack(side="left")
+        self.cb_rc = ttk.Combobox(vrf, width=16, values=["", "cworst", "cbest", "typical", "rcworst", "rcbest"])
+        self.cb_rc.pack(side="left")
+
         # FMC input mode
         mf = ttk.Frame(f); mf.pack(fill="x", pady=8)
         ttk.Label(mf, text="FMC input", width=16).pack(side="left")
@@ -413,6 +422,8 @@ class CertiApp:
             "types": types,
             "lib_dir": self.e_lib.get().strip(),
             "fmc_mode": mode,
+            "vt_type": self.cb_vt.get().strip(),
+            "rc_type": self.cb_rc.get().strip(),
         }
         if mode == "decks":
             cfg["fmc_golden_dir"] = self.e_fmc.get().strip()
@@ -625,7 +636,13 @@ class CertiApp:
             self.lst_corner.insert("end", c)
         for t, var in self.type_vars.items():
             var.set(1 if t in (cfg.get("types") or []) else 0)
-        self._set_entry(self.e_fmc, cfg.get("fmc_golden_dir") or "")
+        self.cb_vt.set(cfg.get("vt_type") or "")
+        self.cb_rc.set(cfg.get("rc_type") or "")
+        mode = cfg.get("fmc_mode") or "decks"
+        self.cb_mode.set(self._fmc_mode_labels.get(mode, self._fmc_mode_labels["decks"]))
+        self._on_mode_change()
+        fmc_dir = cfg.get("fmc_golden_dir") if mode == "decks" else cfg.get("fmc_input_dir")
+        self._set_entry(self.e_fmc, fmc_dir or "")
         self._set_entry(self.e_lib, cfg.get("lib_dir") or "")
         self.nb.select(self.tab_setup)
 
