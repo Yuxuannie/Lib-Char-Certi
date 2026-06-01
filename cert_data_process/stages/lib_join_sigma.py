@@ -47,13 +47,17 @@ def _build_liberate_cmd(tcl: Path, script: Path, lib_file: Path, csv_path: Path,
 
 def _build_liberate_shell_cmd(tcl: Path, script: Path, lib_file: Path, csv_path: Path, mode: str, job_dir: "Path | None" = None) -> str:
     base = " ".join(_build_liberate_cmd(tcl=tcl, script=script, lib_file=lib_file, csv_path=csv_path, mode=mode))
-    # Per-job TMPDIR isolation. Concurrent liberate jobs that read the SAME .lib
-    # (a corner's delay + slew both use its non_cons lib) can corrupt each other's
-    # shared cache/temp, silently dropping ocv_sigma tables from some jobs — observed
-    # as multi-corner runs losing slew/hold sigma (NO_DATA) while a single-corner run
-    # was clean. Giving each job its own TMPDIR removes that contention so parallel
-    # is safe again; combined with the serial default below it guarantees correctness.
-    tmp_setup = f"setenv TMPDIR {job_dir} && setenv ALTOS_TMPDIR {job_dir} && " if job_dir is not None else ""
+    # Full per-job temp isolation. Concurrent liberate jobs colliding in a shared
+    # temp/cache dir silently dropped ocv_sigma tables (observed: multi-corner runs
+    # lost slew/hold sigma -> NO_DATA, while a single-corner run was clean). Pointing
+    # every temp/cache env var liberate/Altos may use at the job's PRIVATE dir removes
+    # that contention, so parallel stays fast AND correct. (csh `setenv`.)
+    if job_dir is not None:
+        tmp_setup = "".join(
+            f"setenv {var} {job_dir} && " for var in ("TMPDIR", "TMP", "TEMP", "ALTOS_TMPDIR", "CDS_TMPDIR")
+        )
+    else:
+        tmp_setup = ""
     return (
         "source /tools/dotfile_new/cshrc.liberate 23.1.3.028.isr3 && "
         "setenv ALTOS_MEMORY_OPTIMIZATION_OFF 1 && "
@@ -266,20 +270,22 @@ def run_lib_join_sigma(config: CertDataProcessConfig) -> SigmaLibJoinResult:
     # the job's outputs (named after the CSV stem) are moved up to combined_dir.
     # Worker cap is memory-aware: the host has many cores but liberate is RAM-heavy,
     # so default low and let CERTI_LIB_JOIN_WORKERS tune it.
-    # Default to SERIAL (1). Parallel lib-join corrupted multi-corner runs because
-    # concurrent liberate jobs on the same .lib shared a cache/temp (slew/hold sigma
-    # silently dropped). Per-job TMPDIR isolation (see _build_liberate_shell_cmd) makes
-    # parallel safe to opt into via CERTI_LIB_JOIN_WORKERS=N once validated, but the
-    # safe default is serial so correctness never depends on the env var.
+    # Parallel by default. The multi-corner corruption (slew/hold sigma silently
+    # dropped) was NOT caused by parallelism per se but by concurrent liberate jobs
+    # colliding in a SHARED temp/cache dir. The fix is full per-job temp isolation
+    # (see _build_liberate_shell_cmd: TMPDIR/TMP/TEMP/ALTOS_TMPDIR/CDS_TMPDIR all point
+    # at the job's private dir), so jobs cannot step on each other regardless of which
+    # .lib they read. That keeps the runtime fast. Set CERTI_LIB_JOIN_WORKERS=1 only as
+    # a diagnostic fallback if a run ever looks corrupted again.
     workers_env = os.environ.get("CERTI_LIB_JOIN_WORKERS")
     try:
-        workers = int(workers_env) if workers_env else 1
+        workers = int(workers_env) if workers_env else 4
     except ValueError:
-        workers = 1
+        workers = 4
     workers = max(1, min(workers, len(jobs))) if jobs else 1
     log_lines.append(
-        f"lib_join_workers={workers} (default 1=serial for correctness; "
-        f"set CERTI_LIB_JOIN_WORKERS=N for parallel now that per-job TMPDIR is isolated)"
+        f"lib_join_workers={workers} (parallel; per-job temp isolation prevents "
+        f"cross-job corruption; set CERTI_LIB_JOIN_WORKERS to tune, =1 to force serial)"
     )
     log_lines.append("")
 
