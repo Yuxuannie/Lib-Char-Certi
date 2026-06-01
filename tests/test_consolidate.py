@@ -32,12 +32,14 @@ def test_pr_color_bands():
     assert pr_color(None) == "none"
 
 
-def test_pr_rows_cover_all_slide_rows():
+def test_pr_rows_exclude_nominal_sanity():
+    # nominal is a sanity check, not a colored PR row -> excluded from the pivot.
     labels = [r["label"] for r in PR_ROWS]
-    assert labels == ["hold", "ocv_const_hold", "delay", "ocv_delay_early",
-                      "ocv_delay_late", "delay_mns", "delay_skn", "delay_std",
-                      "trans", "ocv_trans_early", "ocv_trans_late",
+    assert labels == ["ocv_const_hold", "ocv_delay_early", "ocv_delay_late",
+                      "delay_mns", "delay_skn", "delay_std",
+                      "ocv_trans_early", "ocv_trans_late",
                       "trans_mns", "trans_skn", "trans_std"]
+    assert "Nominal" not in {r["metric"] for r in PR_ROWS}
 
 
 def _rec():
@@ -64,6 +66,6 @@ def test_consolidate_builds_columns_and_cells():
     cells = piv["cells"]
     assert cells[("ocv_delay_late", 0)]["pr"] == 92.7
     assert cells[("ocv_delay_late", 0)]["color"] == "amber"
-    assert cells[("delay", 0)]["pr"] == 100.0 and cells[("delay", 0)]["color"] == "green"
-    assert cells[("delay_skn", 0)]["pr"] == 100.0
+    assert cells[("delay_skn", 0)]["pr"] == 100.0          # moments Skew (w1)
     assert cells[("ocv_const_hold", 0)]["color"] == "amber"
+    assert ("delay", 0) not in cells                       # nominal row not shown

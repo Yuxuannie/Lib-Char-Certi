@@ -10,16 +10,17 @@ from __future__ import annotations
 from typing import Any, Optional
 
 # (label, class, source_type, metric_key) — order matches the target slide.
+# NOTE: nominal is a SANITY check (abs((lib_nom-sim_nom)/sim_nom) <= 0.5%, flag on
+# failure), NOT a colored PR metric — a relative test on near-zero hold nominal is
+# meaningless. So the nominal rows (delay/trans/hold) are intentionally NOT shown in
+# this pivot; nominal is surfaced separately as a flag instead.
 PR_ROWS = [
-    {"label": "hold", "cls": "cons", "type": "hold", "metric": "Nominal"},
     {"label": "ocv_const_hold", "cls": "cons", "type": "hold", "metric": "Late_Sigma"},
-    {"label": "delay", "cls": "non_cons", "type": "delay", "metric": "Nominal"},
     {"label": "ocv_delay_early", "cls": "non_cons", "type": "delay", "metric": "Early_Sigma"},
     {"label": "ocv_delay_late", "cls": "non_cons", "type": "delay", "metric": "Late_Sigma"},
     {"label": "delay_mns", "cls": "non_cons", "type": "delay", "metric": "Meanshift"},
     {"label": "delay_skn", "cls": "non_cons", "type": "delay", "metric": "Skew"},
     {"label": "delay_std", "cls": "non_cons", "type": "delay", "metric": "Std"},
-    {"label": "trans", "cls": "non_cons", "type": "slew", "metric": "Nominal"},
     {"label": "ocv_trans_early", "cls": "non_cons", "type": "slew", "metric": "Early_Sigma"},
     {"label": "ocv_trans_late", "cls": "non_cons", "type": "slew", "metric": "Late_Sigma"},
     {"label": "trans_mns", "cls": "non_cons", "type": "slew", "metric": "Meanshift"},
