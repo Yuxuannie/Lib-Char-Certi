@@ -479,7 +479,8 @@ class CertiApp:
         ttk.Label(bar, text="Sub-95% points — double-click a row for the outlier scatter",
                   style="Sec.TLabel").pack(side="left")
         ttk.Button(bar, text="Build", command=self._render_outliers).pack(side="right")
-        cols = ["Metric", "Class", "Batch · Corner", "PR%", "#cells", "Polarity", "WorstErr(ps)", "RelErr%"]
+        cols = ["Metric", "Class", "Batch · Corner", "PR%", "#cells", "#opt", "#pess",
+                "Polarity", "WorstErr(ps)", "RelErr%"]
         self.tv_out = ttk.Treeview(f, columns=cols, show="headings", selectmode="browse")
         for c in cols:
             self.tv_out.heading(c, text=c)
@@ -507,14 +508,16 @@ class CertiApp:
                     pr = _consolidate._value(prow["metric"], basis, s, m)
                     if pr is None or pr >= _consolidate.GREEN_LOW:
                         continue
-                    br = {"n_outlier_cells": "?", "polarity": "?", "worst_err_ps": None, "worst_rel_pct": None}
+                    br = {"n_outlier_cells": "?", "n_optimistic": "?", "n_pessimistic": "?",
+                          "polarity": "?", "worst_err_ps": None, "worst_rel_pct": None}
                     if bdir is not None:
                         csvp = _perarc.find_per_arc_csv(bdir, corner, prow["type"], prow["metric"])
                         if csvp:
                             br = _outliers.outlier_breakdown(_perarc.load_rows(csvp), prow["metric"])
                     iid = self.tv_out.insert("", "end", values=(
                         prow["label"], prow["cls"], f"{bid} · {short_corner(corner)}", f"{pr:.1f}",
-                        br.get("n_outlier_cells", "?"), br.get("polarity", "?"),
+                        br.get("n_outlier_cells", "?"), br.get("n_optimistic", "?"),
+                        br.get("n_pessimistic", "?"), br.get("polarity", "?"),
                         "" if br.get("worst_err_ps") is None else f"{br['worst_err_ps']:.2f}",
                         "" if br.get("worst_rel_pct") is None else f"{br['worst_rel_pct']:.1f}"))
                     self._out_meta[iid] = (rid, corner, prow["type"], prow["metric"],
@@ -550,77 +553,100 @@ class CertiApp:
         self._open_scatter_mpl(label, metric, rows, pts, FigureCanvasTkAgg, NavigationToolbar2Tk, _plots)
 
     def _open_scatter_mpl(self, label, metric, rows, pts, FigureCanvasTkAgg, NavToolbar, plots):
-        """Enriched panel: matplotlib scatter + ranked lists + residual toggle + Save PNG."""
+        """Enriched panel: matplotlib scatter + ranked lists, in a draggable split.
+
+        The figure/canvas/toolbar are built ONCE; selections and mode/filter changes
+        only clear+redraw the same figure (canvas.draw_idle), so interaction is fast
+        even with thousands of points (the old per-point, rebuild-everything path
+        took minutes over X11)."""
         tk, ttk = self.tk, self.ttk
         from ..analysis import outliers as _o
         win = tk.Toplevel(self.root)
         win.title(f"Outlier analysis — {label}")
-        state = {"mode": "lib_vs_mc", "highlight": set()}
-        left = ttk.Frame(win); left.pack(side="left", fill="both", expand=True)
-        right = ttk.Frame(win, padding=6); right.pack(side="right", fill="y")
+        win.geometry("1100x640")
+        state = {"mode": "lib_vs_mc", "highlight": set(), "opt_only": False}
+
+        # Draggable horizontal split: plot (left, weight 3) | rankings (right, weight 1)
+        pw = ttk.PanedWindow(win, orient="horizontal")
+        pw.pack(fill="both", expand=True)
+        left = ttk.Frame(pw)
+        right = ttk.Frame(pw, padding=6)
+        pw.add(left, weight=3)
+        pw.add(right, weight=1)
+
         bar = ttk.Frame(left); bar.pack(fill="x")
         mode_var = tk.StringVar(value="lib_vs_mc")
-        holder = {"canvas": None, "toolbar": None, "fig": None}
+        opt_var = tk.IntVar(value=0)
+
+        fig = plots.build_scatter_figure(pts, metric, mode="lib_vs_mc", rel_threshold=0.03)
+        canvas = FigureCanvasTkAgg(fig, master=left)
+        toolbar = NavToolbar(canvas, left)
+        toolbar.update()
+        canvas.get_tk_widget().pack(fill="both", expand=True)
+        holder = {"fig": fig}
 
         def redraw():
-            if holder["canvas"]:
-                holder["canvas"].get_tk_widget().destroy()
-            if holder["toolbar"]:
-                holder["toolbar"].destroy()
-            fig = plots.build_scatter_figure(pts, metric, mode=state["mode"],
-                                             highlight=state["highlight"], rel_threshold=0.03)
-            c = FigureCanvasTkAgg(fig, master=left)
-            c.draw()
-            tb = NavToolbar(c, left)
-            tb.update()
-            c.get_tk_widget().pack(fill="both", expand=True)
-            holder.update(canvas=c, toolbar=tb, fig=fig)
+            plots.build_scatter_figure(
+                pts, metric, mode=state["mode"], highlight=state["highlight"],
+                rel_threshold=0.03, optimistic_only=state["opt_only"], fig=holder["fig"])
+            canvas.draw_idle()
 
         def set_mode():
-            state["mode"] = mode_var.get()
-            redraw()
+            state["mode"] = mode_var.get(); redraw()
 
-        for key, txt in (("lib_vs_mc", "Lib vs MC"), ("residual", "Residual")):
+        def set_opt():
+            state["opt_only"] = bool(opt_var.get()); redraw()
+
+        for key, txt in (("lib_vs_mc", "Lib vs MC"), ("abs_vs_rel", "Abs·Rel err")):
             ttk.Radiobutton(bar, text=txt, value=key, variable=mode_var,
                             command=set_mode).pack(side="left", padx=4)
+        ttk.Checkbutton(bar, text="Optimistic only", variable=opt_var,
+                        command=set_opt).pack(side="left", padx=10)
 
         def save_png():
             from tkinter import filedialog
             p = filedialog.asksaveasfilename(defaultextension=".png", initialfile="outliers.png")
-            if p and holder["fig"]:
+            if p:
                 plots.save_figure(holder["fig"], p, dpi=200)
 
         ttk.Button(bar, text="Save PNG", command=save_png).pack(side="right", padx=4)
 
         def add_table(title, cols, data, arcs_for):
             ttk.Label(right, text=title, style="Sec.TLabel").pack(anchor="w", pady=(6, 0))
-            tv = ttk.Treeview(right, columns=cols, show="headings", height=6, selectmode="browse")
+            wrap = ttk.Frame(right); wrap.pack(fill="both", expand=True)
+            tv = ttk.Treeview(wrap, columns=cols, show="headings", height=7, selectmode="browse")
+            sb = ttk.Scrollbar(wrap, orient="vertical", command=tv.yview)
+            tv.configure(yscrollcommand=sb.set)
             for c in cols:
                 tv.heading(c, text=c)
-                tv.column(c, width=88, anchor="center")
+                tv.column(c, width=120 if c == "cell" else 70, anchor="w" if c == "cell" else "center")
             for d in data:
-                tv.insert("", "end", values=tuple(
-                    d.get(c.lower().replace(" ", "_"), d.get(c, "")) for c in cols))
-            tv.pack(fill="x")
+                tv.insert("", "end", values=tuple(_fmt_cell(d.get(c, "")) for c in cols))
+            tv.pack(side="left", fill="both", expand=True)
+            sb.pack(side="right", fill="y")
             def on_sel(_e, _tv=tv, _data=data, _af=arcs_for):
                 sel = _tv.selection()
                 if sel:
-                    idx = _tv.index(sel[0])
-                    state["highlight"] = _af(_data[idx])
+                    state["highlight"] = _af(_data[_tv.index(sel[0])])
                     redraw()
             tv.bind("<<TreeviewSelect>>", on_sel)
 
+        def _fmt_cell(v):
+            return f"{v:.1f}" if isinstance(v, float) else v
+
         cells = _o.rank_by_cell(rows, metric)
         tps = _o.rank_by_table_point(rows, metric)
-        worst = _o.worst_arcs(rows, metric, top=20)
+        worst = _o.worst_arcs(rows, metric, top=30)
         arcset = lambda pred: {a for (_mc, _lib, _o2, a) in pts if pred(a)}
-        add_table("Top cells", ["cell", "n_fail", "worst_rel_pct"], cells,
+        add_table("Top cells (n_fail · opt/pess · worst%)",
+                  ["cell", "n_fail", "n_opt", "n_pess", "worst_rel_pct"], cells,
                   lambda d: arcset(lambda a: _o._cell_of(a) == d["cell"]))
-        add_table("Top table points", ["index1", "index2", "n_fail"], tps,
+        add_table("Top table points",
+                  ["index1", "index2", "n_fail", "worst_rel_pct"], tps,
                   lambda d: arcset(lambda a: _o.arc_indices(a) == (d["index1"], d["index2"])))
-        add_table("Worst arcs", ["cell", "rel_pct", "direction"], worst,
+        add_table("Worst arcs",
+                  ["cell", "rel_pct", "abs_err_ps", "direction"], worst,
                   lambda d: {d["arc"]})
-        redraw()
 
     def _open_scatter_canvas(self, pts, label, metric):
         """Fallback Canvas scatter when matplotlib is unavailable."""

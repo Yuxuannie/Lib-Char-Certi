@@ -9,3 +9,5 @@ dist/
 *_check_*.log
 sigma_waiver_check_*.log
 certi_runs/
+# Voltage Margin tool is its own git repo, kept here for reference only.
+3-Voltage_Margin_Tool/

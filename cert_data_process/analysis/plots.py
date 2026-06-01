@@ -22,39 +22,59 @@ def _ulabel(metric: str) -> str:
     return f"{metric} ({u})" if u else metric
 
 
-def build_scatter_figure(points, metric, mode="lib_vs_mc", highlight=None, rel_threshold=None):
-    """Build a professional outlier scatter Figure.
+def _coords(points, mode):
+    """Return (xs, ys) arrays for the chosen plot mode.
+    - lib_vs_mc:  x = MC value, y = Lib value
+    - abs_vs_rel: x = |Lib-MC| (abs err, ps), y = signed rel error (%)  [optimistic < 0]
+    """
+    if mode == "abs_vs_rel":
+        xs = [abs(lib - mc) for mc, lib, *_ in points]
+        ys = [((lib - mc) / abs(mc) * 100.0 if mc else 0.0) for mc, lib, *_ in points]
+    else:
+        xs = [p[0] for p in points]
+        ys = [p[1] for p in points]
+    return xs, ys
+
+
+def build_scatter_figure(points, metric, mode="lib_vs_mc", highlight=None,
+                         rel_threshold=None, optimistic_only=False, fig=None):
+    """Build / refresh a professional outlier scatter Figure.
 
     Args:
         points: list of (mc, lib, is_outlier, arc) — from perarc.scatter_points().
         metric: metric name, e.g. 'Late_Sigma' (used for axis labels + units).
-        mode: 'lib_vs_mc' (Lib value vs MC value) or 'residual' (rel error vs MC).
-        highlight: set of arc strings to emphasize (larger, outlined markers).
+        mode: 'lib_vs_mc' or 'abs_vs_rel' (abs error vs rel error).
+        highlight: set of arc strings to emphasize (larger, black-edged markers).
         rel_threshold: relative error threshold to draw a band/lines on the plot.
+        optimistic_only: when True, keep only optimistic-risk points (Lib < MC).
+        fig: reuse this Figure (cleared first) instead of creating one — lets the
+             GUI keep one embedded canvas, so redraws are fast (no widget rebuild).
     Returns:
         matplotlib Figure (no pyplot state; safe for headless/Agg and Tk embedding).
     """
     highlight = highlight or set()
-    fig = Figure(figsize=(6, 5), dpi=120)
+    if optimistic_only:
+        points = [p for p in points if p[1] < p[0]]  # Lib < MC = optimistic risk
+    if fig is None:
+        fig = Figure(figsize=(6, 5), dpi=110)
+    else:
+        fig.clear()
     ax = fig.add_subplot(111)
 
-    mcs = [p[0] for p in points]
-    libs = [p[1] for p in points]
+    xs, ys = _coords(points, mode)
 
-    if mode == "residual":
-        xs = mcs
-        ys = [((lib - mc) / abs(mc) * 100.0 if mc else 0.0) for mc, lib in zip(mcs, libs)]
+    # Reference geometry per mode.
+    if mode == "abs_vs_rel":
         ax.axhline(0, color="#9ec5fe", lw=1.2, zorder=1)
         if rel_threshold:
             ax.axhline(rel_threshold * 100, color="#f97316", ls="--", lw=0.9, zorder=1)
             ax.axhline(-rel_threshold * 100, color="#f97316", ls="--", lw=0.9, zorder=1)
-        ax.set_xlabel(f"MC {_ulabel(metric)}", fontsize=10)
-        ax.set_ylabel("Rel error (%)", fontsize=10)
+        ax.set_xlabel(f"Abs error |Lib-MC| ({metric_unit(metric) or 'ps'})", fontsize=10)
+        ax.set_ylabel("Rel error (%)  [optimistic < 0]", fontsize=10)
     else:
-        xs, ys = mcs, libs
-        if mcs and libs:
-            lo = min(mcs + libs)
-            hi = max(mcs + libs)
+        if xs and ys:
+            lo = min(xs + ys)
+            hi = max(xs + ys)
             if hi > lo:
                 ax.plot([lo, hi], [lo, hi], color="#9ec5fe", ls="--", lw=1.2, zorder=1)
                 if rel_threshold:
@@ -67,23 +87,40 @@ def build_scatter_figure(points, metric, mode="lib_vs_mc", highlight=None, rel_t
         ax.set_xlabel(f"MC {_ulabel(metric)}", fontsize=10)
         ax.set_ylabel(f"Lib {_ulabel(metric)}", fontsize=10)
 
+    # Vectorized: bucket points into a few categories and scatter each once.
+    # (Per-point scatter calls were the cause of multi-minute redraws on big sets.)
+    cats = {"pass": ([], []), "pess": ([], []), "opt": ([], []), "hi": ([], [])}
+    n_opt = n_pess = 0
     for x, y, p in zip(xs, ys, points):
-        is_out, arc = p[2], p[3]
-        big = arc in highlight
-        ax.scatter(
-            [x], [y],
-            s=50 if big else 14,
-            c="#dc2626" if is_out else "#94a3b8",
-            edgecolors="black" if big else "none",
-            linewidths=0.8,
-            zorder=3 if big else 2,
-            alpha=0.85 if is_out else 0.55,
-        )
+        mc, lib, is_out, arc = p
+        if arc in highlight:
+            key = "hi"
+        elif not is_out:
+            key = "pass"
+        elif lib < mc:        # optimistic risk (lib claims better than MC)
+            key = "opt"; n_opt += 1
+        else:
+            key = "pess"; n_pess += 1
+        cats[key][0].append(x)
+        cats[key][1].append(y)
 
-    n_out = sum(1 for p in points if p[2])
-    ax.set_title(f"{metric}  (n={len(points)}, outliers={n_out}, red = outlier)", fontsize=10)
+    if cats["pass"][0]:
+        ax.scatter(cats["pass"][0], cats["pass"][1], s=12, c="#cbd5e1",
+                   edgecolors="none", alpha=0.5, zorder=2, label="pass")
+    if cats["pess"][0]:
+        ax.scatter(cats["pess"][0], cats["pess"][1], s=16, c="#f59e0b",
+                   edgecolors="none", alpha=0.8, zorder=3, label="pessimistic")
+    if cats["opt"][0]:
+        ax.scatter(cats["opt"][0], cats["opt"][1], s=20, c="#dc2626",
+                   edgecolors="none", alpha=0.85, zorder=4, label="optimistic (risk)")
+    if cats["hi"][0]:
+        ax.scatter(cats["hi"][0], cats["hi"][1], s=60, c="#1d4ed8",
+                   edgecolors="black", linewidths=0.8, zorder=5, label="selected")
+
+    ax.set_title(f"{metric}  (n={len(points)}, opt={n_opt}, pess={n_pess})", fontsize=10)
     ax.grid(True, color="#e5e7eb", lw=0.6, zorder=0)
     ax.tick_params(labelsize=8)
+    ax.legend(loc="best", fontsize=7, framealpha=0.7)
     fig.tight_layout()
     return fig
 

@@ -72,7 +72,7 @@ def test_app_constructs_and_renders(tmp_path, fake_tk):
     import matplotlib; matplotlib.use("Agg")
     from cert_data_process.analysis import plots as _plots, outliers as _o
     pts = [(40.0, 38.0, True, "combinational_A_Z_rise_A_rise_NO_CONDITION_3_5")]
-    assert _plots.build_scatter_figure(pts, "Late_Sigma", mode="residual", rel_threshold=0.03) is not None
+    assert _plots.build_scatter_figure(pts, "Late_Sigma", mode="abs_vs_rel", rel_threshold=0.03) is not None
     test_rows = [{"Arc": pts[0][3], "Late_Sigma_MC_value": "40",
                   "Late_Sigma_Lib_value": "38", "Late_Sigma_Final_Status": "Fail"}]
     assert _o.rank_by_cell(test_rows, "Late_Sigma")[0]["cell"] == "A"
