@@ -85,10 +85,96 @@ def build_moments_rows(out: Path) -> list[dict[str, Any]]:
             "ms": _num(d.get("Meanshift_Base_PR")),
             "std": _num(d.get("Std_Base_PR")),
             "skew": _num(d.get("Skew_Base_PR")),
+            "msW1": _num(d.get("Meanshift_PR_with_Waiver1")),
+            "stdW1": _num(d.get("Std_PR_with_Waiver1")),
+            "skewW1": _num(d.get("Skew_PR_with_Waiver1")),
         }
         row.update(_coverage(d))
         rows.append(row)
     return rows
+
+
+# ---- per-type results view + certification verdict (B) ----
+PASS_THRESHOLD = 95.0
+TYPE_ORDER = ["delay", "slew", "hold", "mpw"]
+TYPE_METRICS = {
+    "delay": ["Early_Sigma", "Late_Sigma", "Meanshift", "Std", "Skew"],
+    "slew": ["Early_Sigma", "Late_Sigma", "Meanshift", "Std", "Skew"],
+    "hold": ["Late_Sigma"],
+    "mpw": ["Late_Sigma"],
+}
+# metric -> (source, base_key, w1_key) where source is 'sigma' or 'moments'
+_METRIC_SRC = {
+    "Early_Sigma": ("sigma", "eBase", "eW1"),
+    "Late_Sigma": ("sigma", "lBase", "lW1"),
+    "Meanshift": ("moments", "ms", "msW1"),
+    "Std": ("moments", "std", "stdW1"),
+    "Skew": ("moments", "skew", "skewW1"),
+}
+
+
+def _metric_value(metric: str, basis: str, sig: Optional[dict], mom: Optional[dict]) -> Optional[float]:
+    src, base_key, w1_key = _METRIC_SRC[metric]
+    row = sig if src == "sigma" else mom
+    if not row:
+        return None
+    return row.get(w1_key if basis == "w1" else base_key)
+
+
+def per_type_sections(record: dict, basis: str = "base") -> list[dict]:
+    """Group results by type (delay/slew/hold/mpw). Returns ordered sections:
+    {type, metrics:[names], rows:[{corner, health, values:{metric:pr}}]}."""
+    sigma = {(r["corner"], r["type"]): r for r in record.get("sigma", [])}
+    moments = {(r["corner"], r["type"]): r for r in record.get("moments", [])}
+    corners_by_type: dict[str, list] = {}
+    for (corner, typ) in list(sigma) + list(moments):
+        corners_by_type.setdefault(typ, [])
+        if corner not in corners_by_type[typ]:
+            corners_by_type[typ].append(corner)
+    sections = []
+    for typ in TYPE_ORDER:
+        if typ not in corners_by_type:
+            continue
+        metrics = TYPE_METRICS[typ]
+        rows = []
+        for corner in corners_by_type[typ]:
+            sig = sigma.get((corner, typ))
+            mom = moments.get((corner, typ))
+            health = (sig or mom or {}).get("health", "UNKNOWN")
+            rows.append({
+                "corner": corner, "health": health,
+                "values": {m: _metric_value(m, basis, sig, mom) for m in metrics},
+            })
+        sections.append({"type": typ, "metrics": metrics, "rows": rows})
+    return sections
+
+
+def certification_verdict(record: dict, basis: str = "base", threshold: float = PASS_THRESHOLD) -> dict:
+    """PASS iff every shown type-metric pass rate (all corners) >= threshold.
+    Returns {passed, threshold, basis, failing:[(type,corner,metric,pr)], n_evaluated}."""
+    failing = []
+    n = 0
+    for section in per_type_sections(record, basis):
+        for row in section["rows"]:
+            for metric, pr in row["values"].items():
+                if pr is None:
+                    continue
+                n += 1
+                if pr < threshold:
+                    failing.append((section["type"], row["corner"], metric, pr))
+    return {"passed": (n > 0 and not failing), "threshold": threshold, "basis": basis,
+            "failing": failing, "n_evaluated": n}
+
+
+def flat_export_rows(record: dict, basis: str = "base") -> list[list]:
+    """Flat, copiable table for CSV export: header + [type,corner,metric,pass_rate,health]."""
+    out = [["Type", "Corner", "Metric", "Pass_Rate", "Coverage_Health"]]
+    for section in per_type_sections(record, basis):
+        for row in section["rows"]:
+            for metric, pr in row["values"].items():
+                out.append([section["type"], row["corner"], metric,
+                            "" if pr is None else f"{pr:.1f}", row["health"]])
+    return out
 
 
 def overall_status(stage_execution: list[dict[str, Any]]) -> str:

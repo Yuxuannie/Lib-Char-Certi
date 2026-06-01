@@ -12,7 +12,12 @@ from pathlib import Path
 from typing import Any, Optional
 
 from ..web import runs
+from ..web import summary as _summary
 from ..web.executor import JobManager
+
+# Pass-rate cell colors (B): green >=95, amber 90-<95, red <90, neutral unknown.
+PR_BG = {"hi": "#d8f5e0", "mid": "#fdebc8", "lo": "#fad4d4", "na": "#eef2f7"}
+PR_FG = {"hi": "#15803d", "mid": "#b45309", "lo": "#b91c1c", "na": "#8a94a6"}
 
 TYPES = ["delay", "slew", "hold", "mpw"]
 STAGES = [
@@ -204,7 +209,18 @@ class CertiApp:
             self.type_vars[t] = var
             ttk.Checkbutton(tf, text=t, variable=var).pack(side="left", padx=6)
 
-        self.e_fmc = self._dir_field(f, "FMC golden dir (decks)")
+        # FMC input mode
+        mf = ttk.Frame(f); mf.pack(fill="x", pady=8)
+        ttk.Label(mf, text="FMC input", width=16).pack(side="left")
+        self.fmc_mode = tk.StringVar(value="decks")
+        self._fmc_mode_labels = {"decks": "Decks (parse)", "parsed_dfds": "Parsed DFDS", "parsed_scld": "Parsed SCLD"}
+        self.cb_mode = ttk.Combobox(mf, state="readonly", width=18,
+                                    values=list(self._fmc_mode_labels.values()))
+        self.cb_mode.current(0)
+        self.cb_mode.pack(side="left")
+        self.cb_mode.bind("<<ComboboxSelected>>", lambda e: self._on_mode_change())
+
+        self.e_fmc = self._dir_field(f, "FMC dir")
         self.e_lib = self._dir_field(f, "Lib dir")
 
         actions = ttk.Frame(f); actions.pack(fill="x", pady=(14, 0))
@@ -252,20 +268,64 @@ class CertiApp:
                             font=("DejaVu Sans", 11, "bold"), foreground=STATE_FG["pending"])
             lbl.pack()
             self.stage_lbls[key] = lbl
+        # high-level live log (C)
+        ttk.Label(f, text="Log", style="Sec.TLabel").pack(anchor="w", pady=(16, 4))
+        logwrap = ttk.Frame(f); logwrap.pack(fill="both", expand=True)
+        self.log_text = tk.Text(logwrap, height=12, wrap="word", relief="solid", borderwidth=1,
+                                bg="#0e1518", fg="#cfe6db", insertbackground="#cfe6db",
+                                font=("DejaVu Sans Mono", 9), padx=8, pady=6)
+        lsb = ttk.Scrollbar(logwrap, orient="vertical", command=self.log_text.yview)
+        self.log_text.configure(yscrollcommand=lsb.set, state="disabled")
+        self.log_text.tag_configure("err", foreground="#ff8c8c")
+        self.log_text.tag_configure("warn", foreground="#ffce80")
+        self.log_text.tag_configure("ok", foreground="#7ee0a4")
+        self.log_text.pack(side="left", fill="both", expand=True)
+        lsb.pack(side="right", fill="y")
+        self._logged_stage_state = {}
+
+    def _log(self, msg, tag=None):
+        self.log_text.configure(state="normal")
+        self.log_text.insert("end", msg + "\n", (tag,) if tag else ())
+        self.log_text.see("end")
+        self.log_text.configure(state="disabled")
 
     def _build_results(self):
-        ttk = self.ttk
+        tk, ttk = self.tk, self.ttk
         f = self.tab_res
-        bar = ttk.Frame(f); bar.pack(fill="x", pady=(0, 8))
+        self.basis = getattr(self, "basis", "base")
+        bar = ttk.Frame(f); bar.pack(fill="x", pady=(0, 6))
         self.res_title = ttk.Label(bar, text="No batch loaded.", style="Sec.TLabel")
         self.res_title.pack(side="left")
-        self.btn_rerun = ttk.Button(bar, text="Load config → Setup (rerun)", command=self._rerun_loaded)
+        self.btn_rerun = ttk.Button(bar, text="Rerun config", command=self._rerun_loaded)
         self.btn_rerun.pack(side="right")
-        ttk.Label(f, text="Sigma", style="Sec.TLabel").pack(anchor="w")
-        self.tv_sigma = self._make_table(f, ["Corner", "Type", "Early Base", "Early +W1",
-                                             "Late Base", "Late +W1", "Coverage", "Health"])
-        ttk.Label(f, text="Moments (from FMC)", style="Sec.TLabel").pack(anchor="w", pady=(10, 0))
-        self.tv_mom = self._make_table(f, ["Corner", "Type", "Meanshift", "Std", "Skew", "Coverage", "Health"])
+        self.btn_export = ttk.Button(bar, text="Export CSV", command=self._export_csv)
+        self.btn_export.pack(side="right", padx=6)
+        # Base / +Waiver1 toggle
+        self.basis_var = tk.StringVar(value=self.basis)
+        seg = ttk.Frame(bar); seg.pack(side="right", padx=10)
+        ttk.Label(seg, text="PR:", style="Muted.TLabel").pack(side="left")
+        for key, txt in (("base", "Base"), ("w1", "+Waiver1")):
+            ttk.Radiobutton(seg, text=txt, value=key, variable=self.basis_var,
+                            command=self._on_basis_change).pack(side="left")
+        # verdict banner
+        self.verdict_lbl = tk.Label(f, text="", anchor="w", padx=14, pady=10,
+                                    font=("DejaVu Sans", 13, "bold"))
+        self.verdict_lbl.pack(fill="x", pady=(0, 8))
+        # scrollable body for per-type sections
+        wrap = ttk.Frame(f); wrap.pack(fill="both", expand=True)
+        self.res_canvas = tk.Canvas(wrap, highlightthickness=0, bg=self.palette["BG"])
+        sb = ttk.Scrollbar(wrap, orient="vertical", command=self.res_canvas.yview)
+        self.res_body = ttk.Frame(self.res_canvas)
+        self.res_body.bind("<Configure>",
+                           lambda e: self.res_canvas.configure(scrollregion=self.res_canvas.bbox("all")))
+        self.res_canvas.create_window((0, 0), window=self.res_body, anchor="nw")
+        self.res_canvas.configure(yscrollcommand=sb.set)
+        self.res_canvas.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+
+    def _on_basis_change(self):
+        self.basis = self.basis_var.get()
+        self._render_results()
 
     def _make_table(self, parent, cols):
         ttk = self.ttk
@@ -326,18 +386,39 @@ class CertiApp:
             self.corners.append(c)
             self.lst_corner.insert("end", c)
 
+    def _mode_key(self) -> str:
+        label = self.cb_mode.get()
+        for k, v in self._fmc_mode_labels.items():
+            if v == label:
+                return k
+        return "decks"
+
+    def _on_mode_change(self):
+        # relabel the FMC dir field to hint what's expected
+        mode = self._mode_key()
+        hint = {"decks": "FMC dir (decks)", "parsed_dfds": "FMC dir (parsed DFDS)",
+                "parsed_scld": "FMC dir (parsed SCLD)"}[mode]
+        if hasattr(self, "fmc_dir_label"):
+            self.fmc_dir_label.configure(text=hint)
+
     def _gather(self) -> dict:
         types = [t for t, v in self.type_vars.items() if v.get()]
-        return {
+        mode = self._mode_key()
+        cfg = {
             "name": self.e_name.get().strip(),
             "vendor": self.vendor.get(),
             "process": self.e_proc.get().strip(),
             "process_version": self.e_ver.get().strip(),
             "corners": list(self.corners),
             "types": types,
-            "fmc_golden_dir": self.e_fmc.get().strip(),
             "lib_dir": self.e_lib.get().strip(),
+            "fmc_mode": mode,
         }
+        if mode == "decks":
+            cfg["fmc_golden_dir"] = self.e_fmc.get().strip()
+        else:
+            cfg["fmc_input_dir"] = self.e_fmc.get().strip()
+        return cfg
 
     def _submit(self):
         from tkinter import messagebox
@@ -353,6 +434,11 @@ class CertiApp:
         for lbl in self.stage_lbls.values():
             lbl.configure(text="pending", foreground=STATE_FG["pending"])
         self.pipe_banner.configure(text=f"{cfg['name'] or self.active_job} — queued…")
+        self._logged_stage_state = {}
+        self.log_text.configure(state="normal"); self.log_text.delete("1.0", "end")
+        self.log_text.configure(state="disabled")
+        self._log(f"submitted: {cfg['name'] or self.active_job}  (mode={cfg['fmc_mode']}, "
+                  f"corners={len(cfg['corners'])}, types={','.join(cfg['types'])})")
         self.nb.select(self.tab_pipe)
         self.root.after(300, self._poll)
 
@@ -363,16 +449,59 @@ class CertiApp:
         st = self.manager.status(self.active_job)
         if not st:
             return
+        label = {k: n for k, n in STAGES}
         for key, lbl in self.stage_lbls.items():
             s = st["stages"].get(key, "pending")
             lbl.configure(text=s, foreground=STATE_FG.get(s, "#222"))
+            if self._logged_stage_state.get(key) != s and s != "pending":
+                tag = "ok" if s == "passed" else "err" if s == "failed" else "warn" if s in ("partial", "running") else None
+                self._log(f"  {label.get(key, key)}: {s}", tag)
+                self._logged_stage_state[key] = s
         self.pipe_banner.configure(text=f"{st['name']} — {st['state']}"
                                         + (f": {st['error']}" if st.get("error") else ""))
         if st["state"] in ("passed", "partial", "failed"):
+            self._surface_failures(self.active_job, st)
             self.refresh_history()
             self.load_results(self.active_job)
             return
         self.root.after(800, self._poll)
+
+    def _surface_failures(self, batch_id, st):
+        """On completion, collect stage failures from run_manifest.json into a
+        single failures_summary.txt and point the user to it (C)."""
+        import json
+        tag = "ok" if st["state"] == "passed" else "err" if st["state"] == "failed" else "warn"
+        self._log(f"run {st['state']}.", tag)
+        if st.get("error"):
+            self._log(f"  error: {st['error']}", "err")
+        bdir = runs.batch_dir(self.runs_root, batch_id)
+        manifest = bdir / "run_manifest.json"
+        if not manifest.is_file():
+            return
+        try:
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        lines = []
+        for stg in data.get("stage_execution", []):
+            fails = stg.get("failures") or []
+            if fails:
+                name = stg.get("stage", "?")
+                reasons = {}
+                for fa in fails:
+                    reasons[fa.get("reason", "?")] = reasons.get(fa.get("reason", "?"), 0) + 1
+                summ = ", ".join(f"{n}x {r}" for r, n in reasons.items())
+                self._log(f"  ⚠ {name}: {len(fails)} issue(s) — {summ}", "warn")
+                lines.append(f"[{name}] {len(fails)} failures: {summ}")
+                for fa in fails:
+                    lines.append(f"  - {fa.get('reason','?')}: {fa.get('detail', fa.get('csv',''))}")
+        if lines:
+            fpath = bdir / "failures_summary.txt"
+            try:
+                fpath.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                self._log(f"  details written to: {fpath}", "warn")
+            except OSError:
+                pass
 
     # ---- history / results / compare ----
     def refresh_history(self):
@@ -397,22 +526,82 @@ class CertiApp:
     def load_results(self, batch_id):
         rec = runs.read_run_record(self.runs_root, batch_id) if batch_id else None
         self.loaded_rec = rec
-        for tv in (self.tv_sigma, self.tv_mom):
-            for iid in tv.get_children():
-                tv.delete(iid)
+        self._render_results()
+        self.nb.select(self.tab_res)
+
+    def _render_results(self):
+        tk, ttk = self.tk, self.ttk
+        for w in self.res_body.winfo_children():
+            w.destroy()
+        rec = getattr(self, "loaded_rec", None)
         if not rec:
             self.res_title.configure(text="No batch loaded.")
+            self.verdict_lbl.configure(text="", bg=self.palette["BG"])
             return
+        basis = getattr(self, "basis", "base")
         self.res_title.configure(text=f"{rec.get('name','')}  ·  {rec.get('status','')}")
-        for r in rec.get("sigma", []):
-            self.tv_sigma.insert("", "end", tags=(r.get("health", "OK"),), values=(
-                short_corner(r["corner"]), r["type"], fmt_pr(r.get("eBase")), fmt_pr(r.get("eW1")),
-                fmt_pr(r.get("lBase")), fmt_pr(r.get("lW1")), coverage_text(r), r.get("health", "")))
-        for r in rec.get("moments", []):
-            self.tv_mom.insert("", "end", tags=(r.get("health", "OK"),), values=(
-                short_corner(r["corner"]), r["type"], fmt_pr(r.get("ms")), fmt_pr(r.get("std")),
-                fmt_pr(r.get("skew")), coverage_text(r), r.get("health", "")))
-        self.nb.select(self.tab_res)
+        # verdict banner
+        v = _summary.certification_verdict(rec, basis)
+        if v["n_evaluated"] == 0:
+            self.verdict_lbl.configure(text="CERTIFICATION: no data", bg="#eef2f7", fg="#475569")
+        elif v["passed"]:
+            self.verdict_lbl.configure(text=f"CERTIFICATION: PASS  —  all {v['n_evaluated']} type-metrics ≥ {v['threshold']:.0f}%  ({'+Waiver1' if basis=='w1' else 'Base PR'})",
+                                       bg="#d8f5e0", fg="#15803d")
+        else:
+            self.verdict_lbl.configure(text=f"CERTIFICATION: FAIL  —  {len(v['failing'])} of {v['n_evaluated']} type-metrics below {v['threshold']:.0f}%  ({'+Waiver1' if basis=='w1' else 'Base PR'})",
+                                       bg="#fad4d4", fg="#b91c1c")
+        # per-type sections
+        for section in _summary.per_type_sections(rec, basis):
+            self._render_type_section(self.res_body, section)
+
+    def _render_type_section(self, parent, section):
+        tk, ttk = self.tk, self.ttk
+        typ = section["type"]
+        metrics = section["metrics"]
+        box = ttk.LabelFrame(parent, text=typ.upper(), padding=8)
+        box.pack(fill="x", expand=True, pady=(0, 10), padx=2)
+        # header row
+        hdr = ["Corner"] + [m.replace("_", " ") for m in metrics] + ["Coverage", "Health"]
+        for c, text in enumerate(hdr):
+            tk.Label(box, text=text, font=("DejaVu Sans", 9, "bold"), fg="#475569",
+                     bg=self.palette["CARD"], padx=10, pady=5, anchor="w" if c == 0 else "center").grid(
+                row=0, column=c, sticky="nsew", padx=1, pady=1)
+        for r, row in enumerate(section["rows"], start=1):
+            tk.Label(box, text=short_corner(row["corner"]), bg="#ffffff", fg="#0f172a",
+                     padx=10, pady=5, anchor="w").grid(row=r, column=0, sticky="nsew", padx=1, pady=1)
+            for c, m in enumerate(metrics, start=1):
+                pr = row["values"].get(m)
+                cls = pr_class(pr)
+                tk.Label(box, text=fmt_pr(pr), bg=PR_BG[cls], fg=PR_FG[cls],
+                         font=("DejaVu Sans", 10, "bold"), padx=10, pady=5).grid(
+                    row=r, column=c, sticky="nsew", padx=1, pady=1)
+            tk.Label(box, text=coverage_text(row), bg="#ffffff", fg="#475569", padx=10, pady=5).grid(
+                row=r, column=len(metrics) + 1, sticky="nsew", padx=1, pady=1)
+            hbg = HEALTH_BG.get(row["health"], "#eef2f7")
+            tk.Label(box, text=row["health"], bg=hbg, fg="#334155", padx=10, pady=5).grid(
+                row=r, column=len(metrics) + 2, sticky="nsew", padx=1, pady=1)
+
+    def _export_csv(self):
+        from tkinter import filedialog, messagebox
+        rec = getattr(self, "loaded_rec", None)
+        if not rec:
+            return messagebox.showinfo("Export", "Open a batch first.")
+        rows = _summary.flat_export_rows(rec, getattr(self, "basis", "base"))
+        default = f"{rec.get('id','results')}_passrates.csv"
+        path = filedialog.asksaveasfilename(defaultextension=".csv", initialfile=default,
+                                            filetypes=[("CSV", "*.csv")])
+        if not path:
+            return
+        import csv as _csv
+        with open(path, "w", newline="", encoding="utf-8") as fh:
+            _csv.writer(fh).writerows(rows)
+        # also copy to clipboard (tab-separated for easy paste)
+        text = "\n".join("\t".join(str(c) for c in r) for r in rows)
+        try:
+            self.root.clipboard_clear(); self.root.clipboard_append(text)
+        except Exception:
+            pass
+        messagebox.showinfo("Export", f"Wrote {len(rows)-1} pass-rate rows to:\n{path}\n(also copied to clipboard)")
 
     def _set_entry(self, entry, val):
         entry.delete(0, "end")
