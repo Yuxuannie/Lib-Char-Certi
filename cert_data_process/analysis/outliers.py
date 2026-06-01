@@ -55,7 +55,7 @@ def outlier_breakdown(per_arc_rows: list, metric_prefix: str) -> dict:
         else:
             n_pess += 1
         abs_err = abs(lib - mc)
-        rel = (abs_err / abs(mc) * 100.0) if mc != 0 else 0.0
+        rel = rel_pct_for(row, metric_prefix, mc, lib)
         if worst_abs is None or abs_err > worst_abs:
             worst_abs = abs_err
         if worst_rel is None or rel > worst_rel:
@@ -90,8 +90,34 @@ def arc_indices(arc: str):
     return ("", "")
 
 
-def _failing(rows, metric):
-    """Yield (row, mc, lib, abs_err, rel_pct) for every failing covered arc."""
+def rel_pct_for(row, metric, mc, lib) -> float:
+    """Relative error % using the ENGINE's denominator.
+
+    The engine (check_sigma) computes rel_err = (Lib-MC) / max(|Nominal|, |MC|) and
+    persists it as ``{metric}_rel_err`` (a signed fraction). We read that so the
+    displayed rel% matches the pass/fail thresholds per type (delay/slew sigma are
+    divided by the large nominal, NOT the small sigma). Fallback to |Lib-MC|/|MC|
+    only when the column is absent (older / moments CSVs)."""
+    raw = row.get(f"{metric}_rel_err")
+    v = _f(raw)
+    if v is not None and str(raw).strip() != "":
+        return abs(v) * 100.0
+    return abs(lib - mc) / abs(mc) * 100.0 if mc != 0 else 0.0
+
+
+def _polarity_ok(mc, lib, polarity: str) -> bool:
+    if polarity == "opt":
+        return lib < mc
+    if polarity == "pess":
+        return lib >= mc
+    return True
+
+
+def _failing(rows, metric, polarity: str = "all"):
+    """Yield (row, mc, lib, abs_err, rel_pct) for failing covered arcs.
+
+    rel_pct uses the engine denominator (see rel_pct_for). ``polarity`` filters to
+    'opt' (Lib<MC), 'pess' (Lib>=MC), or 'all'."""
     mc_k, lib_k, st_k = f"{metric}_MC_value", f"{metric}_Lib_value", f"{metric}_Final_Status"
     for r in rows:
         if _is_pass(r.get(st_k, "")):
@@ -99,14 +125,15 @@ def _failing(rows, metric):
         mc, lib = _f(r.get(mc_k)), _f(r.get(lib_k))
         if mc is None or lib is None:
             continue
-        rel = abs(lib - mc) / abs(mc) * 100.0 if mc != 0 else 0.0
-        yield r, mc, lib, abs(lib - mc), rel
+        if not _polarity_ok(mc, lib, polarity):
+            continue
+        yield r, mc, lib, abs(lib - mc), rel_pct_for(r, metric, mc, lib)
 
 
-def rank_by_cell(rows, metric):
+def rank_by_cell(rows, metric, polarity: str = "all"):
     """One dict per failing cell, sorted by n_fail desc then worst_rel_pct desc."""
     agg: dict = {}
-    for r, mc, lib, ae, rel in _failing(rows, metric):
+    for r, mc, lib, ae, rel in _failing(rows, metric, polarity):
         c = _cell_of(r.get("Arc", ""))
         d = agg.setdefault(c, {"cell": c, "n_fail": 0, "worst_rel_pct": 0.0,
                                "worst_err_ps": 0.0, "n_opt": 0, "n_pess": 0})
@@ -123,10 +150,10 @@ def rank_by_cell(rows, metric):
     return sorted(agg.values(), key=lambda d: (-d["n_fail"], -d["worst_rel_pct"]))
 
 
-def rank_by_table_point(rows, metric):
+def rank_by_table_point(rows, metric, polarity: str = "all"):
     """One dict per (index1, index2) grid point with failing arcs."""
     agg: dict = {}
-    for r, mc, lib, ae, rel in _failing(rows, metric):
+    for r, mc, lib, ae, rel in _failing(rows, metric, polarity):
         i1, i2 = arc_indices(r.get("Arc", ""))
         d = agg.setdefault((i1, i2), {"index1": i1, "index2": i2, "n_fail": 0,
                                        "worst_rel_pct": 0.0, "worst_err_ps": 0.0})
@@ -136,10 +163,10 @@ def rank_by_table_point(rows, metric):
     return sorted(agg.values(), key=lambda d: (-d["n_fail"], -d["worst_rel_pct"]))
 
 
-def worst_arcs(rows, metric, top: int = 20):
+def worst_arcs(rows, metric, top: int = 20, polarity: str = "all"):
     """Top-N failing arcs sorted by rel_pct desc."""
     out = []
-    for r, mc, lib, ae, rel in _failing(rows, metric):
+    for r, mc, lib, ae, rel in _failing(rows, metric, polarity):
         i1, i2 = arc_indices(r.get("Arc", ""))
         out.append({"arc": r.get("Arc", ""), "cell": _cell_of(r.get("Arc", "")),
                     "index1": i1, "index2": i2, "mc": mc, "lib": lib,

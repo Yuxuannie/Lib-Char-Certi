@@ -757,7 +757,7 @@ class CertiApp:
         # Default the rel-error scale to log only when the spread is wide; the user
         # can switch Normal/Log freely below (only affects the Abs·Rel err mode).
         auto_log = plots.auto_log_recommended(pts, "abs_vs_rel")
-        state = {"mode": "lib_vs_mc", "highlight": set(), "opt_only": False,
+        state = {"mode": "lib_vs_mc", "highlight": set(), "polarity": "all",
                  "scale": "symlog" if auto_log else "linear"}
 
         # Draggable horizontal split: plot (left, weight 3) | rankings (right, weight 1)
@@ -770,7 +770,7 @@ class CertiApp:
 
         bar = ttk.Frame(left); bar.pack(fill="x")
         mode_var = tk.StringVar(value="lib_vs_mc")
-        opt_var = tk.IntVar(value=0)
+        pol_var = tk.StringVar(value="all")
         scale_var = tk.StringVar(value=state["scale"])
 
         fig = plots.build_scatter_figure(pts, metric, mode="lib_vs_mc", rel_threshold=0.03)
@@ -783,15 +783,17 @@ class CertiApp:
         def redraw():
             plots.build_scatter_figure(
                 pts, metric, mode=state["mode"], highlight=state["highlight"],
-                rel_threshold=0.03, optimistic_only=state["opt_only"],
+                rel_threshold=0.03, polarity=state["polarity"],
                 scale=state["scale"], fig=holder["fig"])
             canvas.draw_idle()
 
         def set_mode():
             state["mode"] = mode_var.get(); redraw()
 
-        def set_opt():
-            state["opt_only"] = bool(opt_var.get()); redraw()
+        def set_polarity():
+            # Polarity filters BOTH the scatter and the ranking tables.
+            state["polarity"] = pol_var.get(); state["highlight"] = set()
+            rebuild_tables(); redraw()
 
         def set_scale():
             state["scale"] = scale_var.get(); redraw()
@@ -799,8 +801,10 @@ class CertiApp:
         for key, txt in (("lib_vs_mc", "Lib vs MC"), ("abs_vs_rel", "Abs·Rel err")):
             ttk.Radiobutton(bar, text=txt, value=key, variable=mode_var,
                             command=set_mode).pack(side="left", padx=4)
-        ttk.Checkbutton(bar, text="Optimistic only", variable=opt_var,
-                        command=set_opt).pack(side="left", padx=10)
+        ttk.Label(bar, text="Show:").pack(side="left", padx=(10, 0))
+        for key, txt in (("all", "All"), ("opt", "Optimistic"), ("pess", "Pessimistic")):
+            ttk.Radiobutton(bar, text=txt, value=key, variable=pol_var,
+                            command=set_polarity).pack(side="left")
         ttk.Label(bar, text="Scale:").pack(side="left", padx=(10, 0))
         for key, txt in (("linear", "Normal"), ("symlog", "Log")):
             ttk.Radiobutton(bar, text=txt, value=key, variable=scale_var,
@@ -814,9 +818,11 @@ class CertiApp:
 
         ttk.Button(bar, text="Save PNG", command=save_png).pack(side="right", padx=4)
 
+        tbl_holder = ttk.Frame(right); tbl_holder.pack(fill="both", expand=True)
+
         def add_table(title, cols, data, arcs_for, detail=False):
-            ttk.Label(right, text=title, style="Sec.TLabel").pack(anchor="w", pady=(6, 0))
-            wrap = ttk.Frame(right); wrap.pack(fill="both", expand=True)
+            ttk.Label(tbl_holder, text=title, style="Sec.TLabel").pack(anchor="w", pady=(6, 0))
+            wrap = ttk.Frame(tbl_holder); wrap.pack(fill="both", expand=True)
             tv = ttk.Treeview(wrap, columns=cols, show="headings", height=7, selectmode="browse")
             sb = ttk.Scrollbar(wrap, orient="vertical", command=tv.yview)
             tv.configure(yscrollcommand=sb.set)
@@ -843,19 +849,27 @@ class CertiApp:
         def _fmt_cell(v):
             return f"{v:.1f}" if isinstance(v, float) else v
 
-        cells = _o.rank_by_cell(rows, metric)
-        tps = _o.rank_by_table_point(rows, metric)
-        worst = _o.worst_arcs(rows, metric, top=30)
-        arcset = lambda pred: {a for (_mc, _lib, _o2, a) in pts if pred(a)}
-        add_table("Top cells (n_fail · opt/pess · worst%)",
-                  ["cell", "n_fail", "n_opt", "n_pess", "worst_rel_pct"], cells,
-                  lambda d: arcset(lambda a: _o._cell_of(a) == d["cell"]))
-        add_table("Top table points",
-                  ["index1", "index2", "n_fail", "worst_rel_pct"], tps,
-                  lambda d: arcset(lambda a: _o.arc_indices(a) == (d["index1"], d["index2"])))
-        add_table("Worst arcs (double-click for MC/Lib detail)",
-                  ["cell", "rel_pct", "abs_err_ps", "direction"], worst,
-                  lambda d: {d["arc"]}, detail=True)
+        arcset = lambda pred: {p[3] for p in pts if pred(p[3])}
+
+        def rebuild_tables():
+            # Re-rank with the active polarity filter (All / Optimistic / Pessimistic).
+            for w in tbl_holder.winfo_children():
+                w.destroy()
+            pol = state["polarity"]
+            cells = _o.rank_by_cell(rows, metric, polarity=pol)
+            tps = _o.rank_by_table_point(rows, metric, polarity=pol)
+            worst = _o.worst_arcs(rows, metric, top=30, polarity=pol)
+            add_table("Top cells (n_fail · opt/pess · worst%)",
+                      ["cell", "n_fail", "n_opt", "n_pess", "worst_rel_pct"], cells,
+                      lambda d: arcset(lambda a: _o._cell_of(a) == d["cell"]))
+            add_table("Top table points",
+                      ["index1", "index2", "n_fail", "worst_rel_pct"], tps,
+                      lambda d: arcset(lambda a: _o.arc_indices(a) == (d["index1"], d["index2"])))
+            add_table("Worst arcs (double-click for MC/Lib detail)",
+                      ["cell", "rel_pct", "abs_err_ps", "direction"], worst,
+                      lambda d: {d["arc"]}, detail=True)
+
+        rebuild_tables()
 
     def _show_arc_detail(self, d, metric):
         """Popup with the full numbers for one outlier arc (MC, Lib, errors, direction)."""
@@ -867,6 +881,10 @@ class CertiApp:
         txt = tk.Text(win, width=72, height=12, font=("DejaVu Sans Mono", 9), padx=10, pady=8)
         mc, lib = d.get("mc"), d.get("lib")
         signed = (lib - mc) if (mc is not None and lib is not None) else None
+        # Effective denominator the engine used = |signed_err| / |rel_frac|.
+        ae = d.get("abs_err_ps", 0.0)
+        rel = d.get("rel_pct", 0.0)
+        denom = (ae / (rel / 100.0)) if rel else None
         lines = [
             f"Arc        : {d.get('arc', '')}",
             f"Cell       : {d.get('cell', '')}",
@@ -876,8 +894,9 @@ class CertiApp:
             f"  MC value   : {mc} {unit}",
             f"  Lib value  : {lib} {unit}",
             f"  Signed err : {signed if signed is None else round(signed, 4)} {unit}  (Lib - MC)",
-            f"  Abs err    : {round(d.get('abs_err_ps', 0.0), 4)} {unit}",
-            f"  Rel err    : {round(d.get('rel_pct', 0.0), 3)} %",
+            f"  Abs err    : {round(ae, 4)} {unit}",
+            f"  Rel err    : {round(rel, 3)} %   (engine denominator = max(|Nominal|,|MC|))",
+            f"  Denominator: {round(denom, 3) if denom else 'n/a'} {unit}",
             f"  Direction  : {d.get('direction', '')}"
             + ("   (optimistic = Lib<MC, library claims better than MC)"
                if d.get("direction") == "optimistic" else ""),
@@ -910,7 +929,8 @@ class CertiApp:
                        fill="#222", font=("DejaVu Sans", 10, "bold"))
         info = cv.create_text(W // 2, 38, text="click a point for its arc", fill="#777",
                               font=("DejaVu Sans", 8))
-        for mc, lib, is_out, arc in pts:
+        for p in pts:
+            mc, lib, is_out, arc = p[0], p[1], p[2], p[3]
             x, y, rr = sx(mc), sy(lib), 3
             oid = cv.create_oval(x - rr, y - rr, x + rr, y + rr,
                                  fill=("#dc2626" if is_out else "#94a3b8"), outline="")

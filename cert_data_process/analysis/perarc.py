@@ -47,12 +47,20 @@ def load_rows(csv_path) -> list:
 
 
 def scatter_points(rows: list, metric: str) -> list:
-    """Per-arc points for the scatter: (mc, lib, is_outlier, arc) for covered arcs."""
+    """Per-arc points for the scatter: (mc, lib, is_outlier, arc, rel_frac) for covered arcs.
+
+    rel_frac is the ENGINE's signed relative error ({metric}_rel_err) so the scatter's
+    rel-error axis uses the same per-type denominator as the pass/fail logic; falls back
+    to (lib-mc)/|mc| when the column is absent."""
     mc_k, lib_k, st_k = f"{metric}_MC_value", f"{metric}_Lib_value", f"{metric}_Final_Status"
+    rel_k = f"{metric}_rel_err"
     pts = []
     for r in rows:
         mc, lib = _f(r.get(mc_k)), _f(r.get(lib_k))
         if mc is None or lib is None:
             continue
-        pts.append((mc, lib, not _is_pass(r.get(st_k, "")), r.get("Arc", "")))
+        rel = _f(r.get(rel_k))
+        if rel is None or str(r.get(rel_k, "")).strip() == "":
+            rel = (lib - mc) / abs(mc) if mc != 0 else 0.0
+        pts.append((mc, lib, not _is_pass(r.get(st_k, "")), r.get("Arc", ""), rel))
     return pts

@@ -33,10 +33,11 @@ def test_build_with_highlight():
     assert fig is not None
 
 
-def test_optimistic_only_filters_to_lib_below_mc():
+def test_polarity_filter():
     # PTS[0] is optimistic (38<40); PTS[1] is pessimistic (30.1>30).
-    fig = build_scatter_figure(PTS, "Late_Sigma", optimistic_only=True)
-    assert fig is not None
+    assert build_scatter_figure(PTS, "Late_Sigma", polarity="opt") is not None
+    assert build_scatter_figure(PTS, "Late_Sigma", polarity="pess") is not None
+    assert build_scatter_figure(PTS, "Late_Sigma", polarity="all") is not None
 
 
 def test_needs_symlog_detects_wide_spread():

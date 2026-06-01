@@ -29,8 +29,15 @@ def _coords(points, mode):
                   [optimistic Lib<MC < 0 on both axes]
     """
     if mode == "abs_vs_rel":
-        xs = [(lib - mc) for mc, lib, *_ in points]
-        ys = [((lib - mc) / abs(mc) * 100.0 if mc else 0.0) for mc, lib, *_ in points]
+        xs = [(p[1] - p[0]) for p in points]                       # signed error Lib-MC
+        # y = engine signed rel% (p[4], a fraction) when present, else recompute.
+        ys = []
+        for p in points:
+            mc, lib = p[0], p[1]
+            if len(p) > 4 and p[4] is not None:
+                ys.append(p[4] * 100.0)
+            else:
+                ys.append((lib - mc) / abs(mc) * 100.0 if mc else 0.0)
     else:
         xs = [p[0] for p in points]
         ys = [p[1] for p in points]
@@ -63,24 +70,26 @@ def auto_log_recommended(points, mode="abs_vs_rel") -> bool:
 
 
 def build_scatter_figure(points, metric, mode="lib_vs_mc", highlight=None,
-                         rel_threshold=None, optimistic_only=False, scale="auto", fig=None):
+                         rel_threshold=None, polarity="all", scale="auto", fig=None):
     """Build / refresh a professional outlier scatter Figure.
 
     Args:
-        points: list of (mc, lib, is_outlier, arc) — from perarc.scatter_points().
+        points: list of (mc, lib, is_outlier, arc[, rel_frac]) — from perarc.scatter_points().
         metric: metric name, e.g. 'Late_Sigma' (used for axis labels + units).
         mode: 'lib_vs_mc' or 'abs_vs_rel' (abs error vs rel error).
         highlight: set of arc strings to emphasize (larger, black-edged markers).
         rel_threshold: relative error threshold to draw a band/lines on the plot.
-        optimistic_only: when True, keep only optimistic-risk points (Lib < MC).
+        polarity: 'all', 'opt' (Lib<MC), or 'pess' (Lib>=MC) — filters the points.
         fig: reuse this Figure (cleared first) instead of creating one — lets the
              GUI keep one embedded canvas, so redraws are fast (no widget rebuild).
     Returns:
         matplotlib Figure (no pyplot state; safe for headless/Agg and Tk embedding).
     """
     highlight = highlight or set()
-    if optimistic_only:
-        points = [p for p in points if p[1] < p[0]]  # Lib < MC = optimistic risk
+    if polarity == "opt":
+        points = [p for p in points if p[1] < p[0]]   # Lib < MC = optimistic risk
+    elif polarity == "pess":
+        points = [p for p in points if p[1] >= p[0]]  # Lib >= MC = pessimistic
     if fig is None:
         fig = Figure(figsize=(6, 5), dpi=110)
     else:
@@ -133,7 +142,7 @@ def build_scatter_figure(points, metric, mode="lib_vs_mc", highlight=None,
     cats = {"pass": ([], []), "pess": ([], []), "opt": ([], []), "hi": ([], [])}
     n_opt = n_pess = 0
     for x, y, p in zip(xs, ys, points):
-        mc, lib, is_out, arc = p
+        mc, lib, is_out, arc = p[0], p[1], p[2], p[3]
         if arc in highlight:
             key = "hi"
         elif not is_out:

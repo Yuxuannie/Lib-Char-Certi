@@ -42,5 +42,6 @@ def test_scatter_points(tmp_path):
     ]
     pts = perarc.scatter_points(rows, "Late_Sigma")
     assert len(pts) == 2                       # blank-value row dropped
-    assert pts[0] == (40.0, 38.0, True, "combinational_INVD1_Z_rise_A_rise_NO_CONDITION_3_5")
+    assert pts[0][:4] == (40.0, 38.0, True, "combinational_INVD1_Z_rise_A_rise_NO_CONDITION_3_5")
+    assert pts[0][4] == (38.0 - 40.0) / 40.0   # 5th element = signed rel fraction (no rel_err col -> recompute)
     assert pts[1][2] is False                  # passing arc not an outlier

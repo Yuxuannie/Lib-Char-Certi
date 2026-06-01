@@ -64,3 +64,31 @@ def test_rank_by_table_point_and_worst_arcs():
     assert tp[0]["index1"] == "3" and tp[0]["index2"] == "5" and tp[0]["n_fail"] == 2
     w = worst_arcs(rows, "Late_Sigma", top=5)
     assert w[0]["cell"] == "B" and w[0]["direction"] == "pessimistic" and round(w[0]["rel_pct"]) == 40
+
+
+def test_rel_pct_uses_engine_denominator_when_present():
+    from cert_data_process.analysis.outliers import rel_pct_for
+    # engine rel_err column present -> use it (5%), NOT |lib-mc|/|mc| (which would be 100%)
+    row = {"Late_Sigma_rel_err": "0.05"}
+    assert rel_pct_for(row, "Late_Sigma", 100.0, 200.0) == 5.0
+    # absent -> fallback recompute |200-100|/100 = 100%
+    assert rel_pct_for({}, "Late_Sigma", 100.0, 200.0) == 100.0
+
+
+def test_worst_arcs_rel_uses_engine_column():
+    rows = [{"Arc": "combinational_A_Z_rise_A_rise_NO_CONDITION_3_5",
+             "Late_Sigma_MC_value": "500", "Late_Sigma_Lib_value": "550",
+             "Late_Sigma_Final_Status": "Fail", "Late_Sigma_rel_err": "0.10"}]
+    w = worst_arcs(rows, "Late_Sigma")
+    assert round(w[0]["rel_pct"], 1) == 10.0      # engine 10%, not |550-500|/500=10%... here same; check engine path
+    # abs err is still raw ps
+    assert w[0]["abs_err_ps"] == 50.0
+
+
+def test_polarity_filter_on_ranks():
+    rows = [_a("A", 3, 5, 40, 38, "Fail"),   # optimistic (lib<mc)
+            _a("B", 3, 5, 50, 70, "Fail")]   # pessimistic (lib>mc)
+    assert {d["cell"] for d in rank_by_cell(rows, "Late_Sigma", polarity="opt")} == {"A"}
+    assert {d["cell"] for d in rank_by_cell(rows, "Late_Sigma", polarity="pess")} == {"B"}
+    assert {d["cell"] for d in rank_by_cell(rows, "Late_Sigma", polarity="all")} == {"A", "B"}
+    assert {w["cell"] for w in worst_arcs(rows, "Late_Sigma", polarity="opt")} == {"A"}
