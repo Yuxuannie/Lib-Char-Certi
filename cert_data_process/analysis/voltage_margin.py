@@ -73,7 +73,10 @@ def run_voltage_margin(batch_dir, corners, types, tool_dir=None, timeout=1800) -
     Returns dict: ok, returncode, reason, out_dir, cmd, stdout_tail, stderr_tail, plus
     the parsed CSVs from read_outputs() when the run produced them.
     """
-    bdir = Path(batch_dir)
+    # Resolve to ABSOLUTE paths: the VM subprocess runs with cwd=tool_dir, so a
+    # relative batch path (e.g. certi_runs/<batch>) would resolve against the wrong
+    # directory and "No such file or directory".
+    bdir = Path(batch_dir).resolve()
     data_dir = bdir / "combined" / "sigma"
     out_dir = bdir / "voltage_margin"
     tool = Path(tool_dir) if tool_dir else vm_tool_dir()
