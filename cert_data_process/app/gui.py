@@ -286,7 +286,10 @@ class CertiApp:
         f = self.tab_pipe
         self.pipe_banner = ttk.Label(f, text="No run yet — configure one in Setup.",
                                      style="Sec.TLabel")
-        self.pipe_banner.pack(anchor="w", pady=(0, 14))
+        self.pipe_banner.pack(anchor="w", pady=(0, 4))
+        self.audit_banner = tk.Label(f, text="", anchor="w", padx=10, pady=4,
+                                     font=("DejaVu Sans", 10, "bold"))
+        self.audit_banner.pack(fill="x", pady=(0, 10))
         self.stage_lbls = {}
         grid = ttk.Frame(f); grid.pack(fill="x")
         for i, (key, name) in enumerate(STAGES):
@@ -659,6 +662,8 @@ class CertiApp:
         for lbl in self.stage_lbls.values():
             lbl.configure(text="pending", foreground=STATE_FG["pending"])
         self.pipe_banner.configure(text=f"{cfg['name'] or self.active_job} — queued…")
+        self._audit_shown = 0
+        self.audit_banner.configure(text="", bg=self.palette["BG"])
         self._logged_stage_state = {}
         self.log_text.configure(state="normal"); self.log_text.delete("1.0", "end")
         self.log_text.configure(state="disabled")
@@ -682,6 +687,23 @@ class CertiApp:
                 tag = "ok" if s == "passed" else "err" if s == "failed" else "warn" if s in ("partial", "running") else None
                 self._log(f"  {label.get(key, key)}: {s}", tag)
                 self._logged_stage_state[key] = s
+        # drain any new audit findings into the log window + update audit banner
+        from .. import audit as _audit
+        findings = st.get("findings", [])
+        shown = getattr(self, "_audit_shown", 0)
+        if len(findings) > shown:
+            new = findings[shown:]
+            by_stage: dict = {}
+            for fnd in new:
+                by_stage.setdefault(fnd["stage"], []).append(fnd)
+            for stage_name, items in by_stage.items():
+                for text, tag in _audit.format_block(stage_name, items, cap=6):
+                    self._log(text, tag)
+            self._audit_shown = len(findings)
+            s_sum = _audit.summarize(findings)
+            bg = "#fad4d4" if s_sum["errors"] else ("#fdebc8" if s_sum["warns"] else "#d8f5e0")
+            self.audit_banner.configure(
+                text=f"Audit: {s_sum['errors']} errors · {s_sum['warns']} warnings", bg=bg)
         self.pipe_banner.configure(text=f"{st['name']} — {st['state']}"
                                         + (f": {st['error']}" if st.get("error") else ""))
         if st["state"] in ("passed", "partial", "failed"):

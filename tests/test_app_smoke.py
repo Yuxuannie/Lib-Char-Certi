@@ -59,6 +59,15 @@ def test_app_constructs_and_renders(tmp_path, fake_tk):
     app._render_outliers()
     app.pr_basis = "base"
     app._render_pr_status()
+    # audit banner + finding rendering under mocked tk
+    app._audit_shown = 0
+    from cert_data_process import audit as _audit
+    sample = _audit.findings_to_dicts(
+        [_audit.Finding("error", "lib_join_sigma", "no_lib", "no_lib_for_corner: X", "", "/l"),
+         _audit.Finding("warn", "build_pr_table", "low_coverage", "LOW_COVERAGE 2780/66470 (4.2%)", "", "/l")])
+    for s_name, items in {"lib_join_sigma": sample[:1], "build_pr_table": sample[1:]}.items():
+        for text, tag in _audit.format_block(s_name, items):
+            app._log(text, tag)
 
 
 def test_pr_status_and_outliers_render_with_a_real_record(tmp_path, fake_tk):
