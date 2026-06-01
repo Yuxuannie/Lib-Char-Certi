@@ -270,6 +270,23 @@ def check_pass_with_waivers(row, type_name, param_name, mc_prefix='MC', lib_pref
         'mc_ci_ub': mc_ci_ub
     }
 
+def _sigma_params_for(type_name):
+    """Params checked for a type, Nominal first (maps to the slide's delay/trans/hold rows)."""
+    if type_name in ('delay', 'slew'):
+        return ['Nominal', 'Early_Sigma', 'Late_Sigma']
+    return ['Nominal', 'Late_Sigma']  # hold / mpw
+
+
+def _required_columns_for(params, vendor_prefix):
+    """Required RPT columns; Nominal has no CI bounds (MC_*_LB/UB) so they're omitted."""
+    cols = ['Arc']
+    for p in params:
+        cols += [f'MC_{p}', f'{vendor_prefix}_{p}']
+        if p != 'Nominal':
+            cols += [f'MC_{p}_LB', f'MC_{p}_UB']
+    return cols
+
+
 def find_rpt_files(root_path, corners, types):
     """Find all RPT files that match the FMC sigma pattern"""
     logging.info(f"Searching for sigma RPT files in: {root_path}")
@@ -341,20 +358,9 @@ def process_sigma_file_with_waivers(file_path, type_name):
         vendor_prefix = detect_vendor_columns(df)
         logging.info(f"Using vendor prefix: {vendor_prefix}")
 
-        # Check if required columns exist (rel_pin_slew no longer needed: abs/slew check removed)
-        required_columns = ['Arc']
-
-        # Determine which sigma parameters to check based on type
-        if type_name in ['delay', 'slew']:
-            sigma_params = ['Early_Sigma', 'Late_Sigma']
-        else:  # hold
-            sigma_params = ['Late_Sigma']
-
-        for param in sigma_params:
-            required_columns.extend([
-                f'MC_{param}', f'{vendor_prefix}_{param}',
-                f'MC_{param}_LB', f'MC_{param}_UB'  # CI bounds for enlargement
-            ])
+        # Determine which sigma parameters to check based on type (Nominal first).
+        sigma_params = _sigma_params_for(type_name)
+        required_columns = _required_columns_for(sigma_params, vendor_prefix)
 
         missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
@@ -573,15 +579,19 @@ def generate_waiver_summary_table(results, root_path, corners=None):
     #     its denominator (prevents "100% PR" over 0 real cells from misleading).
     cov_cols = ['Total_Arcs', 'Covered', 'Uncovered', 'Coverage', 'Data_Health']
     delay_df = pd.DataFrame(columns=[
-        'Corner', 'Early_Sigma_Base_PR', 'Early_Sigma_PR_with_Waiver1',
+        'Corner', 'Nominal_Base_PR', 'Nominal_PR_with_Waiver1',
+        'Early_Sigma_Base_PR', 'Early_Sigma_PR_with_Waiver1',
         'Late_Sigma_Base_PR', 'Late_Sigma_PR_with_Waiver1'] + cov_cols)
     slew_df = pd.DataFrame(columns=[
-        'Corner', 'Early_Sigma_Base_PR', 'Early_Sigma_PR_with_Waiver1',
+        'Corner', 'Nominal_Base_PR', 'Nominal_PR_with_Waiver1',
+        'Early_Sigma_Base_PR', 'Early_Sigma_PR_with_Waiver1',
         'Late_Sigma_Base_PR', 'Late_Sigma_PR_with_Waiver1'] + cov_cols)
     hold_df = pd.DataFrame(columns=[
-        'Corner', 'Late_Sigma_Base_PR', 'Late_Sigma_PR_with_Waiver1'] + cov_cols)
+        'Corner', 'Nominal_Base_PR', 'Nominal_PR_with_Waiver1',
+        'Late_Sigma_Base_PR', 'Late_Sigma_PR_with_Waiver1'] + cov_cols)
     mpw_df = pd.DataFrame(columns=[
-        'Corner', 'Late_Sigma_Base_PR', 'Late_Sigma_PR_with_Waiver1'] + cov_cols)
+        'Corner', 'Nominal_Base_PR', 'Nominal_PR_with_Waiver1',
+        'Late_Sigma_Base_PR', 'Late_Sigma_PR_with_Waiver1'] + cov_cols)
 
     # Extract corner name from file name. Prefer matching one of the requested
     # corners as a substring (robust for arbitrary corner naming, incl. SCLD like
@@ -644,7 +654,7 @@ def generate_waiver_summary_table(results, root_path, corners=None):
                     file_key = (file_name, file_type)
                     break
 
-            params = ['Early_Sigma', 'Late_Sigma'] if type_name in ('delay', 'slew') else ['Late_Sigma']
+            params = _sigma_params_for(type_name)
             new_row = {'Corner': corner}
             if file_key is not None:
                 rates = results[file_key]

@@ -35,6 +35,19 @@ def test_nominal_fail_when_rel_error_exceeds_threshold():
     assert r["waiver1_ci_enlarged"] is False
 
 
+def test_sigma_params_include_nominal_first():
+    assert csm._sigma_params_for("delay") == ["Nominal", "Early_Sigma", "Late_Sigma"]
+    assert csm._sigma_params_for("slew") == ["Nominal", "Early_Sigma", "Late_Sigma"]
+    assert csm._sigma_params_for("hold") == ["Nominal", "Late_Sigma"]
+
+
+def test_required_columns_for_nominal_have_no_ci():
+    cols = csm._required_columns_for(["Nominal", "Late_Sigma"], "CDNS_Lib")
+    assert "MC_Nominal" in cols and "CDNS_Lib_Nominal" in cols
+    assert "MC_Nominal_LB" not in cols       # nominal has no CI
+    assert "MC_Late_Sigma_LB" in cols        # sigma still needs CI
+
+
 def test_sigma_still_uses_ci_bounds():
     # lib outside rel threshold but inside CI -> base pass via CI (unchanged behavior)
     row = _row(MC_Late_Sigma=100.0, CDNS_Lib_Late_Sigma=120.0,
