@@ -45,12 +45,19 @@ def _build_liberate_cmd(tcl: Path, script: Path, lib_file: Path, csv_path: Path,
     ]
 
 
-def _build_liberate_shell_cmd(tcl: Path, script: Path, lib_file: Path, csv_path: Path, mode: str) -> str:
+def _build_liberate_shell_cmd(tcl: Path, script: Path, lib_file: Path, csv_path: Path, mode: str, job_dir: "Path | None" = None) -> str:
     base = " ".join(_build_liberate_cmd(tcl=tcl, script=script, lib_file=lib_file, csv_path=csv_path, mode=mode))
+    # Per-job TMPDIR isolation. Concurrent liberate jobs that read the SAME .lib
+    # (a corner's delay + slew both use its non_cons lib) can corrupt each other's
+    # shared cache/temp, silently dropping ocv_sigma tables from some jobs — observed
+    # as multi-corner runs losing slew/hold sigma (NO_DATA) while a single-corner run
+    # was clean. Giving each job its own TMPDIR removes that contention so parallel
+    # is safe again; combined with the serial default below it guarantees correctness.
+    tmp_setup = f"setenv TMPDIR {job_dir} && setenv ALTOS_TMPDIR {job_dir} && " if job_dir is not None else ""
     return (
         "source /tools/dotfile_new/cshrc.liberate 23.1.3.028.isr3 && "
         "setenv ALTOS_MEMORY_OPTIMIZATION_OFF 1 && "
-        f"{base}"
+        f"{tmp_setup}{base}"
     )
 
 
@@ -259,23 +266,31 @@ def run_lib_join_sigma(config: CertDataProcessConfig) -> SigmaLibJoinResult:
     # the job's outputs (named after the CSV stem) are moved up to combined_dir.
     # Worker cap is memory-aware: the host has many cores but liberate is RAM-heavy,
     # so default low and let CERTI_LIB_JOIN_WORKERS tune it.
+    # Default to SERIAL (1). Parallel lib-join corrupted multi-corner runs because
+    # concurrent liberate jobs on the same .lib shared a cache/temp (slew/hold sigma
+    # silently dropped). Per-job TMPDIR isolation (see _build_liberate_shell_cmd) makes
+    # parallel safe to opt into via CERTI_LIB_JOIN_WORKERS=N once validated, but the
+    # safe default is serial so correctness never depends on the env var.
     workers_env = os.environ.get("CERTI_LIB_JOIN_WORKERS")
     try:
-        workers = int(workers_env) if workers_env else 4
+        workers = int(workers_env) if workers_env else 1
     except ValueError:
-        workers = 4
+        workers = 1
     workers = max(1, min(workers, len(jobs))) if jobs else 1
-    log_lines.append(f"lib_join_workers={workers} (set CERTI_LIB_JOIN_WORKERS to tune; lower if memory-bound)")
+    log_lines.append(
+        f"lib_join_workers={workers} (default 1=serial for correctness; "
+        f"set CERTI_LIB_JOIN_WORKERS=N for parallel now that per-job TMPDIR is isolated)"
+    )
     log_lines.append("")
 
     liberate_missing = {"hit": False}
 
     def _run_job(job: "tuple[Path, Path, str]"):
         csv_path, lib_file, mode = job
-        shell_cmd = _build_liberate_shell_cmd(tcl=tcl, script=script, lib_file=lib_file, csv_path=csv_path, mode=mode)
         job_dir = combined_dir / f".libjob_{csv_path.stem}"
         shutil.rmtree(job_dir, ignore_errors=True)
         job_dir.mkdir(parents=True, exist_ok=True)
+        shell_cmd = _build_liberate_shell_cmd(tcl=tcl, script=script, lib_file=lib_file, csv_path=csv_path, mode=mode, job_dir=job_dir)
         try:
             proc = subprocess.run(["csh", "-fc", shell_cmd], cwd=str(job_dir), capture_output=True, text=True)
         except FileNotFoundError:
