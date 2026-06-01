@@ -59,6 +59,7 @@ class JobManager:
             fmc_input_dir=cfg.get("fmc_input_dir") or None,
             vt_type=cfg.get("vt_type", ""),
             rc_type=cfg.get("rc_type", ""),
+            library_type=cfg.get("library_type", "auto"),
         )
 
         with self._lock:

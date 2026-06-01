@@ -66,7 +66,26 @@ def parse_arc_info(arc_info, mode):
         when_poss = '&&'.join(replaced_list)  # Sometimes A2&A3&!B1&B2&!B3 is replaced in lib by A2&&A3&&!B1&&B2&&!B3
  
     return cell_name, out_pin, rel_pin, when, when_poss, fir_index, sec_index
- 
+
+
+def find_pin_group(cell_grp, pin_name):
+    """Find a pin group by name, supporting multi-bit 'bundle' nesting.
+
+    Base cells expose pins as direct children of the cell. Multi-bit (MB) cells
+    nest their per-bit member pins (D1, Q2, ...) inside a bundle group. Look
+    directly under the cell first, then scan the cell's bundles. Additive: base
+    cells find the pin on the first lookup and never enter the bundle path.
+    """
+    pins = cell_grp.getChildren("pin", pin_name)
+    if pins:
+        return pins
+    for bundle in cell_grp.getChildren("bundle"):
+        pins = bundle.getChildren("pin", pin_name)
+        if pins:
+            return pins
+    return []
+
+
 def get_tbl_point(each_tim_group, target_tbl, fir_index, sec_index, shape=8):
     """ Function used to get table point from ldbx timing group"""
     tbl_grp = each_tim_group.getChildren(target_tbl)
@@ -217,8 +236,10 @@ else:
  
         # Start read from library using ldbx
         cell = lib.getChildren("cell", cell_name)
-        out_pin_grp = cell[0].getChildren("pin", out_pin)
-        tim_groups = out_pin_grp[0].getChildren("timing")
+        # Bundle-aware: finds pins directly under the cell (base) or nested in a
+        # bundle (multi-bit member pins like D1/Q2). See find_pin_group.
+        out_pin_grp = find_pin_group(cell[0], out_pin) if cell else []
+        tim_groups = out_pin_grp[0].getChildren("timing") if out_pin_grp else []
  
         for each_tim_group in tim_groups:
             tim_block_attr = each_tim_group.getAttr()

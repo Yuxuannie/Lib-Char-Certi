@@ -218,6 +218,14 @@ class CertiApp:
         self.cb_rc = ttk.Combobox(vrf, width=16, values=["", "cworst", "cbest", "typical", "rcworst", "rcbest"])
         self.cb_rc.pack(side="left")
 
+        # Library structure (multi-bit cells nest pins in bundles; lookup is
+        # always bundle-aware, so this is metadata/intent only)
+        lrf = ttk.Frame(f); lrf.pack(fill="x", pady=4)
+        ttk.Label(lrf, text="Library type", width=16).pack(side="left")
+        self.cb_lib_type = ttk.Combobox(lrf, state="readonly", width=12, values=["auto", "base", "mb"])
+        self.cb_lib_type.current(0)
+        self.cb_lib_type.pack(side="left")
+
         # FMC input mode
         mf = ttk.Frame(f); mf.pack(fill="x", pady=8)
         ttk.Label(mf, text="FMC input", width=16).pack(side="left")
@@ -424,6 +432,7 @@ class CertiApp:
             "fmc_mode": mode,
             "vt_type": self.cb_vt.get().strip(),
             "rc_type": self.cb_rc.get().strip(),
+            "library_type": self.cb_lib_type.get().strip() or "auto",
         }
         if mode == "decks":
             cfg["fmc_golden_dir"] = self.e_fmc.get().strip()
@@ -638,6 +647,7 @@ class CertiApp:
             var.set(1 if t in (cfg.get("types") or []) else 0)
         self.cb_vt.set(cfg.get("vt_type") or "")
         self.cb_rc.set(cfg.get("rc_type") or "")
+        self.cb_lib_type.set(cfg.get("library_type") or "auto")
         mode = cfg.get("fmc_mode") or "decks"
         self.cb_mode.set(self._fmc_mode_labels.get(mode, self._fmc_mode_labels["decks"]))
         self._on_mode_change()

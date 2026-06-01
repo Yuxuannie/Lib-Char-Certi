@@ -36,6 +36,9 @@ class CertDataProcessConfig:
     # VT type e.g. svt/elvt; RC type e.g. cworst/cbest/typical.
     vt_type: str = ""
     rc_type: str = ""
+    # Library structure hint: "base" | "mb" (multi-bit) | "auto". Metadata only;
+    # lib-join pin lookup is always bundle-aware, so this does not gate correctness.
+    library_type: str = "auto"
 
     @property
     def run_sigma(self) -> bool:
@@ -99,6 +102,7 @@ def build_config(
     fmc_input_dir: Optional[str] = None,
     vt_type: str = "",
     rc_type: str = "",
+    library_type: str = "auto",
 ) -> CertDataProcessConfig:
     """Build and validate a :class:`CertDataProcessConfig`."""
 
@@ -143,4 +147,5 @@ def build_config(
         fmc_input_dir=Path(fmc_input_dir) if fmc_input_dir else None,
         vt_type=(vt_type or "").strip(),
         rc_type=(rc_type or "").strip(),
+        library_type=((library_type or "auto").strip().lower() or "auto"),
     )

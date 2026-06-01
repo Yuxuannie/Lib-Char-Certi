@@ -152,6 +152,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="Optional RC type (e.g. cworst, cbest, typical). Batch metadata; also disambiguates parsed FMC files.",
     )
+    parser.add_argument(
+        "--library-type",
+        choices=("auto", "base", "mb"),
+        default="auto",
+        help="Library structure hint: base, mb (multi-bit), or auto. Metadata only; lib-join is always bundle-aware.",
+    )
     parser.add_argument("--lib-dir", required=True, help="Directory containing .lib files.")
     parser.add_argument("--output-dir", required=True, help="Output directory for stable artifacts.")
     parser.add_argument(
@@ -355,6 +361,7 @@ def run(argv: Optional[Iterable[str]] = None) -> int:
             fmc_input_dir=args.fmc_input_dir,
             vt_type=args.vt_type,
             rc_type=args.rc_type,
+            library_type=args.library_type,
         )
     except ValueError as exc:
         parser.error(str(exc))
