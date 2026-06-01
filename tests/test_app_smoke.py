@@ -57,6 +57,7 @@ def test_app_constructs_and_renders(tmp_path, fake_tk):
     app._pr_records()
     app._render_pr_status()
     app._render_outliers()
+    app._render_common()       # common-offenders tab (no runs -> empty)
     app.pr_basis = "base"
     app._render_pr_status()
     # audit banner + finding rendering under mocked tk

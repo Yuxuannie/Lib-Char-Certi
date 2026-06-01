@@ -197,18 +197,20 @@ class CertiApp:
         self.tab_res = ttk.Frame(self.nb, padding=12)
         self.tab_pr = ttk.Frame(self.nb, padding=12)
         self.tab_out = ttk.Frame(self.nb, padding=12)
+        self.tab_common = ttk.Frame(self.nb, padding=12)
         self.tab_hist = ttk.Frame(self.nb, padding=12)
         self.tab_cmp = ttk.Frame(self.nb, padding=12)
         for f, t in [(self.tab_setup, "Setup"), (self.tab_pipe, "Pipeline"),
                      (self.tab_res, "Results"), (self.tab_pr, "PR Status"),
-                     (self.tab_out, "Outliers"), (self.tab_hist, "History"),
-                     (self.tab_cmp, "Compare")]:
+                     (self.tab_out, "Outliers"), (self.tab_common, "Common"),
+                     (self.tab_hist, "History"), (self.tab_cmp, "Compare")]:
             self.nb.add(f, text=t)
         self._build_setup()
         self._build_pipeline()
         self._build_results()
         self._build_pr_status()
         self._build_outliers()
+        self._build_common()
         self._build_history()
         self._build_compare()
 
@@ -600,6 +602,82 @@ class CertiApp:
                         "" if br.get("worst_rel_pct") is None else f"{br['worst_rel_pct']:.1f}"))
                     self._out_meta[iid] = (rid, corner, prow["type"], prow["metric"],
                                            f"{prow['label']} — {bid} · {short_corner(corner)}")
+
+    # ---- Common offenders (cross-corner / cross-batch) ----
+    def _build_common(self):
+        ttk = self.ttk
+        f = self.tab_common
+        bar = ttk.Frame(f); bar.pack(fill="x", pady=(0, 6))
+        ttk.Label(bar, text="Common offenders — cells/arcs failing across corners & batches "
+                            "(select batches in History, or all)", style="Sec.TLabel").pack(side="left")
+        ctl = ttk.Frame(f); ctl.pack(fill="x", pady=(0, 6))
+        ttk.Label(ctl, text="Metric row:").pack(side="left")
+        self.cb_common_row = ttk.Combobox(ctl, state="readonly", width=18,
+                                          values=[r["label"] for r in _consolidate.PR_ROWS])
+        self.cb_common_row.current(0)
+        self.cb_common_row.pack(side="left", padx=6)
+        ttk.Label(ctl, text="Group by:").pack(side="left", padx=(10, 0))
+        self.common_key = self.tk.StringVar(value="cell")
+        for key, txt in (("cell", "cell"), ("cell_arc", "cell+arc"),
+                         ("cell_table_point", "cell+table point")):
+            ttk.Radiobutton(ctl, text=txt, value=key, variable=self.common_key).pack(side="left")
+        ttk.Button(ctl, text="Build", command=self._render_common).pack(side="right")
+        cols = ["Offender", "#contexts", "#fails", "Worst rel%", "WorstErr(ps)", "Polarity"]
+        self.tv_common = ttk.Treeview(f, columns=cols, show="headings", selectmode="browse")
+        for c in cols:
+            self.tv_common.heading(c, text=c)
+            self.tv_common.column(c, width=100, anchor="center")
+        self.tv_common.column("Offender", width=280, anchor="w")
+        self.tv_common.pack(fill="both", expand=True)
+        self.tv_common.bind("<Double-1>", self._show_common_contexts)
+        self._common_meta: dict = {}
+
+    def _render_common(self):
+        from ..analysis import common as _common
+        self.tv_common.delete(*self.tv_common.get_children())
+        self._common_meta = {}
+        label = self.cb_common_row.get()
+        prow = next((r for r in _consolidate.PR_ROWS if r["label"] == label), None)
+        if not prow:
+            return
+        per_ctx: dict = {}
+        for rec in self._pr_records():
+            rid = rec.get("id")
+            bid = rec.get("batch_id") or rec.get("name", "?")
+            bdir = runs.batch_dir(self.runs_root, rid) if rid else None
+            if bdir is None:
+                continue
+            corners = sorted({s["corner"] for s in rec.get("sigma", []) if s["type"] == prow["type"]}
+                             | {m["corner"] for m in rec.get("moments", []) if m["type"] == prow["type"]})
+            for corner in corners:
+                csvp = _perarc.find_per_arc_csv(bdir, corner, prow["type"], prow["metric"])
+                if csvp:
+                    per_ctx[(bid, corner)] = _perarc.load_rows(csvp)
+        offenders = _common.common_offenders(per_ctx, prow["metric"], key=self.common_key.get())
+        for d in offenders:
+            iid = self.tv_common.insert("", "end", values=(
+                d["key"], d["n_contexts"], d["n_fail_total"], f"{d['worst_rel_pct']:.1f}",
+                f"{d['worst_err_ps']:.2f}", d["polarity"]))
+            self._common_meta[iid] = d
+
+    def _show_common_contexts(self, _evt=None):
+        tk = self.tk
+        sel = self.tv_common.selection()
+        if not sel:
+            return
+        d = self._common_meta.get(sel[0])
+        if not d:
+            return
+        win = tk.Toplevel(self.root)
+        win.title(f"Contexts — {d['key']}")
+        txt = tk.Text(win, width=48, height=max(4, len(d["contexts"]) + 3),
+                      font=("DejaVu Sans Mono", 9), padx=10, pady=8)
+        txt.insert("end", f"{d['key']}\nfails in {d['n_contexts']} context(s), "
+                          f"{d['n_fail_total']} arc-fails, polarity={d['polarity']}\n\n")
+        for bid, corner in d["contexts"]:
+            txt.insert("end", f"  {bid} · {corner}\n")
+        txt.configure(state="disabled")
+        txt.pack(fill="both", expand=True)
 
     def _open_scatter_selected(self, _evt=None):
         sel = self.tv_out.selection()
