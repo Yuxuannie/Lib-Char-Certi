@@ -652,30 +652,66 @@ class CertiApp:
                 if csvp:
                     per_ctx[(bid, corner)] = _perarc.load_rows(csvp)
         offenders = _common.common_offenders(per_ctx, prow["metric"], key=self.common_key.get())
+        # Stash so the detail popup can re-scan WHERE each offender fails.
+        self._common_per_ctx = per_ctx
+        self._common_metric = prow["metric"]
+        self._common_key = self.common_key.get()
         for d in offenders:
             iid = self.tv_common.insert("", "end", values=(
                 d["key"], d["n_contexts"], d["n_fail_total"], f"{d['worst_rel_pct']:.1f}",
                 f"{d['worst_err_ps']:.2f}", d["polarity"]))
             self._common_meta[iid] = d
 
+    def _offender_matches(self, arc: str, d: dict) -> bool:
+        """Does a failing arc belong to this offender, given the active group key?"""
+        from ..analysis import outliers as _o
+        key = getattr(self, "_common_key", "cell")
+        if key == "cell_arc":
+            return arc == d["arc"]
+        if key == "cell_table_point":
+            return _o._cell_of(arc) == d["cell"] and _o.arc_indices(arc) == (d["index1"], d["index2"])
+        return _o._cell_of(arc) == d["cell"]
+
     def _show_common_contexts(self, _evt=None):
-        tk = self.tk
+        tk, ttk = self.tk, self.ttk
+        from ..analysis import outliers as _o
         sel = self.tv_common.selection()
         if not sel:
             return
         d = self._common_meta.get(sel[0])
         if not d:
             return
+        metric = getattr(self, "_common_metric", "Late_Sigma")
+        per_ctx = getattr(self, "_common_per_ctx", {})
         win = tk.Toplevel(self.root)
-        win.title(f"Contexts — {d['key']}")
-        txt = tk.Text(win, width=48, height=max(4, len(d["contexts"]) + 3),
-                      font=("DejaVu Sans Mono", 9), padx=10, pady=8)
-        txt.insert("end", f"{d['key']}\nfails in {d['n_contexts']} context(s), "
-                          f"{d['n_fail_total']} arc-fails, polarity={d['polarity']}\n\n")
-        for bid, corner in d["contexts"]:
-            txt.insert("end", f"  {bid} · {corner}\n")
-        txt.configure(state="disabled")
-        txt.pack(fill="both", expand=True)
+        win.title(f"Where it fails — {d['key']}")
+        win.geometry("820x460")
+        ttk.Label(win, text=f"{d['key']}  —  fails in {d['n_contexts']} context(s), "
+                            f"{d['n_fail_total']} arc-fails, polarity={d['polarity']}",
+                  style="Sec.TLabel").pack(anchor="w", padx=8, pady=(8, 4))
+        cols = ["Batch · Corner", "Arc", "idx1", "idx2", "MC", "Lib", "SignedErr", "Rel%", "Dir"]
+        wrap = ttk.Frame(win); wrap.pack(fill="both", expand=True, padx=8, pady=4)
+        tv = ttk.Treeview(wrap, columns=cols, show="headings", selectmode="browse")
+        sb = ttk.Scrollbar(wrap, orient="vertical", command=tv.yview)
+        tv.configure(yscrollcommand=sb.set)
+        for c in cols:
+            tv.heading(c, text=c)
+            tv.column(c, width=70, anchor="center")
+        tv.column("Batch · Corner", width=170, anchor="w")
+        tv.column("Arc", width=230, anchor="w")
+        # Re-scan each context for THIS offender's failing arcs (the "where").
+        for (bid, corner) in d["contexts"]:
+            for r, mc, lib, ae, rel in _o._failing(per_ctx.get((bid, corner), []), metric):
+                arc = r.get("Arc", "")
+                if not self._offender_matches(arc, d):
+                    continue
+                i1, i2 = _o.arc_indices(arc)
+                tv.insert("", "end", values=(
+                    f"{bid} · {short_corner(corner)}", arc, i1, i2,
+                    round(mc, 3), round(lib, 3), round(lib - mc, 3),
+                    f"{rel:.2f}", "opt" if lib < mc else "pess"))
+        tv.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
 
     def _open_scatter_selected(self, _evt=None):
         sel = self.tv_out.selection()
@@ -1243,24 +1279,51 @@ class CertiApp:
             self.nb.select(self.tab_cmp); return
         recs = [runs.read_run_record(self.runs_root, i) for i in ids]
         recs = [r for r in recs if r]
-        keys = []
+        basis = getattr(self, "pr_basis", "w1")
+
+        # Compare ALL metric rows (sigma Early/Late + moments MS/Std/Skew + hold late),
+        # not just Late_Sigma Base — at the current PR basis. Reuses the pivot model.
+        per_rec = []
         for r in recs:
-            for s in r.get("sigma", []):
-                k = (s["corner"], s["type"])
-                if k not in keys:
-                    keys.append(k)
-        cols = ["Corner · Type"] + [f"{r.get('version','')} {r.get('vendor','')}" for r in recs]
-        tv = ttk.Treeview(self.cmp_holder, columns=cols, show="headings")
+            per_rec.append((
+                {(s["corner"], s["type"]): s for s in r.get("sigma", [])},
+                {(m["corner"], m["type"]): m for m in r.get("moments", [])},
+            ))
+        # Row keys: (corner, prow) present in any batch, in PR_ROWS order.
+        corners = []
+        for sig, mom in per_rec:
+            for (corner, _t) in list(sig) + list(mom):
+                if corner not in corners:
+                    corners.append(corner)
+        corners.sort()
+
+        ttk.Label(self.cmp_holder, text=f"Cross-batch PR — basis: {basis.upper()} "
+                                        f"(set on PR Status). All metrics; — = NO_DATA.",
+                  style="Muted.TLabel").pack(anchor="w", pady=(0, 4))
+        cols = ["Corner · Metric"] + [f"{r.get('batch_id') or r.get('name','?')}" for r in recs]
+        wrap = ttk.Frame(self.cmp_holder); wrap.pack(fill="both", expand=True)
+        tv = ttk.Treeview(wrap, columns=cols, show="headings")
+        sb = ttk.Scrollbar(wrap, orient="vertical", command=tv.yview)
+        tv.configure(yscrollcommand=sb.set)
         for c in cols:
             tv.heading(c, text=c); tv.column(c, width=130, anchor="center")
-        tv.column("Corner · Type", width=220, anchor="w")
-        tv.pack(fill="both", expand=True)
-        for (corner, typ) in keys:
-            vals = [f"{short_corner(corner)} · {typ}"]
-            for r in recs:
-                m = next((s for s in r.get("sigma", []) if s["corner"] == corner and s["type"] == typ), None)
-                vals.append("n/a" if not m else ("—" if m.get("health") == "NO_DATA" else fmt_pr(m.get("lBase"))))
-            tv.insert("", "end", values=vals)
+        tv.column("Corner · Metric", width=260, anchor="w")
+        tv.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+
+        for corner in corners:
+            for prow in _consolidate.PR_ROWS:
+                vals = [f"{short_corner(corner)} · {prow['label']}"]
+                any_val = False
+                for sig, mom in per_rec:
+                    s = sig.get((corner, prow["type"]))
+                    m = mom.get((corner, prow["type"]))
+                    pr = _consolidate._value(prow["metric"], basis, s, m)
+                    if pr is not None:
+                        any_val = True
+                    vals.append("—" if pr is None else fmt_pr(pr))
+                if any_val:
+                    tv.insert("", "end", values=vals)
         self.nb.select(self.tab_cmp)
 
     def _on_close(self):

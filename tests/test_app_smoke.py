@@ -89,6 +89,16 @@ def test_app_constructs_and_renders(tmp_path, fake_tk):
          "index1": "3", "index2": "5", "mc": 40.0, "lib": 38.0,
          "abs_err_ps": 2.0, "rel_pct": 5.0, "direction": "optimistic"},
         "Late_Sigma")
+    # common-offenders "where it fails" matcher (per group-key)
+    arc = "combinational_A_Z_rise_A_rise_NO_CONDITION_3_5"
+    off = {"cell": "A", "arc": arc, "index1": "3", "index2": "5"}
+    app._common_key = "cell"
+    assert app._offender_matches(arc, off) is True
+    app._common_key = "cell_arc"
+    assert app._offender_matches(arc, off) is True
+    assert app._offender_matches("combinational_B_Z_rise_A_rise_NO_CONDITION_3_5", off) is False
+    app._common_key = "cell_table_point"
+    assert app._offender_matches(arc, off) is True
 
 
 def test_pr_status_and_outliers_render_with_a_real_record(tmp_path, fake_tk):
@@ -117,3 +127,24 @@ def test_pr_status_and_outliers_render_with_a_real_record(tmp_path, fake_tk):
     assert len(recs) == 1 and recs[0]["id"] == rid
     app._render_pr_status()    # builds the colored pivot grid from real data
     app._render_outliers()     # 92.59 / 91.49 are < 95 -> inserts outlier rows (no per-arc csv -> "?")
+
+
+def test_compare_uses_all_metrics(tmp_path, fake_tk):
+    from cert_data_process.app.gui import CertiApp
+    from cert_data_process.web import runs
+
+    def _rec(rid, bid, ldelay):
+        return {"id": rid, "name": bid, "batch_id": bid,
+                "config": {"vt_type": "svt", "library_type": "base"},
+                "sigma": [{"corner": "c1", "type": "delay", "eBase": 100.0, "eW1": 100.0,
+                           "lBase": ldelay, "lW1": ldelay, "health": "OK"}],
+                "moments": [{"corner": "c1", "type": "delay", "ms": 99.0, "std": 98.0, "skew": 100.0,
+                             "msW1": 99.0, "stdW1": 98.0, "skewW1": 100.0, "health": "OK"}]}
+
+    for rid, bid, ld in (("r1", "B1", 92.0), ("r2", "B2", 88.0)):
+        runs.write_run_record(tmp_path, rid, _rec(rid, bid, ld))
+        runs.update_index(tmp_path, {"id": rid, "name": bid, "when_utc": f"2026-06-01T00:00:0{rid[-1]}"})
+
+    app = CertiApp(runs_root=tmp_path)
+    app._hist_checked = {"r1", "r2"}
+    app._do_compare()          # exercises the full all-metrics cross-batch loop (no crash)
