@@ -136,24 +136,31 @@ def process_moments_file(file_path, type_name):
     return out
 
 
-def _corner_from_name(file_name):
+def _corner_from_name(file_name, corners=None):
+    # Prefer matching one of the requested corners as a substring (robust for
+    # arbitrary corner naming incl. SCLD like ssgnp_0p475v_0c_cworst_CCworst);
+    # fall back to the legacy regex.
+    if corners:
+        hits = [c for c in corners if c and c in file_name]
+        if hits:
+            return max(hits, key=len)
     import re
     m = re.search(r"(ssg[ng][pg]_[0-9]p[0-9]+v_[mn][0-9]+c)", file_name)
     return m.group(1) if m else file_name
 
 
-def generate_moments_summary_table(results, root_path):
+def generate_moments_summary_table(results, root_path, corners=None):
     cov_cols = ["Total_Arcs", "Covered", "Uncovered", "Coverage", "Data_Health"]
     pr_cols = []
     for p in MOMENT_PARAMS:
         pr_cols += [f"{p}_Base_PR", f"{p}_PR_with_Waiver1"]
 
     rows = []
-    corners = sorted({_corner_from_name(fn) for (fn, _t) in results})
+    corner_list = sorted({_corner_from_name(fn, corners) for (fn, _t) in results})
     types = sorted({t for (_fn, t) in results})
-    for corner in corners:
+    for corner in corner_list:
         for type_name in types:
-            key = next((k for k in results if _corner_from_name(k[0]) == corner and k[1] == type_name), None)
+            key = next((k for k in results if _corner_from_name(k[0], corners) == corner and k[1] == type_name), None)
             row = {"Corner": corner, "Type": type_name}
             if key is None:
                 for c in pr_cols:
@@ -236,7 +243,7 @@ def main():
             results[key] = process_moments_file.summaries[key]
 
     if results:
-        summary_file, csv_file = generate_moments_summary_table(results, args.root_path)
+        summary_file, csv_file = generate_moments_summary_table(results, args.root_path, corners=args.corners)
         with open(summary_file) as f:
             print("\n" + "=" * 50 + "\nMOMENTS PASS-RATE SUMMARY:\n" + "=" * 50)
             print(f.read())
