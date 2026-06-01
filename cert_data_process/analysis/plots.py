@@ -25,15 +25,31 @@ def _ulabel(metric: str) -> str:
 def _coords(points, mode):
     """Return (xs, ys) arrays for the chosen plot mode.
     - lib_vs_mc:  x = MC value, y = Lib value
-    - abs_vs_rel: x = |Lib-MC| (abs err, ps), y = signed rel error (%)  [optimistic < 0]
+    - abs_vs_rel: x = SIGNED error Lib-MC (ps), y = signed rel error (%)
+                  [optimistic Lib<MC < 0 on both axes]
     """
     if mode == "abs_vs_rel":
-        xs = [abs(lib - mc) for mc, lib, *_ in points]
+        xs = [(lib - mc) for mc, lib, *_ in points]
         ys = [((lib - mc) / abs(mc) * 100.0 if mc else 0.0) for mc, lib, *_ in points]
     else:
         xs = [p[0] for p in points]
         ys = [p[1] for p in points]
     return xs, ys
+
+
+def _needs_symlog(values, ratio: float = 100.0):
+    """Decide if a (possibly signed) axis spans too wide a dynamic range for linear.
+
+    Returns a linthresh (the half-width of the linear region around 0) when the
+    max/min of nonzero magnitudes exceeds ``ratio``, else None. symlog (not log) is
+    used because rel-error is signed (optimistic < 0) and may be exactly 0.
+    """
+    mags = sorted(abs(v) for v in values if v)
+    if len(mags) < 3 or mags[0] <= 0:
+        return None
+    if mags[-1] / mags[0] <= ratio:
+        return None
+    return max(mags[0], 0.1)
 
 
 def build_scatter_figure(points, metric, mode="lib_vs_mc", highlight=None,
@@ -66,11 +82,20 @@ def build_scatter_figure(points, metric, mode="lib_vs_mc", highlight=None,
     # Reference geometry per mode.
     if mode == "abs_vs_rel":
         ax.axhline(0, color="#9ec5fe", lw=1.2, zorder=1)
+        ax.axvline(0, color="#9ec5fe", lw=1.2, zorder=1)  # sign boundary: left = optimistic
         if rel_threshold:
             ax.axhline(rel_threshold * 100, color="#f97316", ls="--", lw=0.9, zorder=1)
             ax.axhline(-rel_threshold * 100, color="#f97316", ls="--", lw=0.9, zorder=1)
-        ax.set_xlabel(f"Abs error |Lib-MC| ({metric_unit(metric) or 'ps'})", fontsize=10)
+        ax.set_xlabel(f"Signed error Lib-MC ({metric_unit(metric) or 'ps'})  [optimistic < 0]", fontsize=10)
         ax.set_ylabel("Rel error (%)  [optimistic < 0]", fontsize=10)
+        # Wide rel-error spread -> symlog so small and huge outliers are both readable.
+        lt = _needs_symlog(ys)
+        if lt:
+            ax.set_yscale("symlog", linthresh=lt)
+            ax.set_ylabel("Rel error (%, symlog)  [optimistic < 0]", fontsize=10)
+        ltx = _needs_symlog(xs)
+        if ltx:
+            ax.set_xscale("symlog", linthresh=ltx)
     else:
         if xs and ys:
             lo = min(xs + ys)

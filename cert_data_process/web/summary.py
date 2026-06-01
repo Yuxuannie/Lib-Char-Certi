@@ -120,6 +120,13 @@ def _metric_value(metric: str, basis: str, sig: Optional[dict], mom: Optional[di
     row = sig if src == "sigma" else mom
     if not row:
         return None
+    # Waiver_2 (abs_tol) only relaxes HOLD Late_Sigma. For that cell, basis "w2" uses
+    # lW2 (fallback lW1 when no abs_tol set). Every other metric ignores W2 (-> W1).
+    if basis == "w2":
+        if metric == "Late_Sigma" and "lW2" in row:
+            v = row.get("lW2")
+            return v if v is not None else row.get(w1_key)
+        return row.get(w1_key)
     return row.get(w1_key if basis == "w1" else base_key)
 
 

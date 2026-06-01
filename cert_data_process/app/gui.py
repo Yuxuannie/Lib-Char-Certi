@@ -416,7 +416,7 @@ class CertiApp:
         self.basis_var = tk.StringVar(value=self.basis)
         seg = ttk.Frame(bar); seg.pack(side="right", padx=10)
         ttk.Label(seg, text="PR:", style="Muted.TLabel").pack(side="left")
-        for key, txt in (("base", "Base"), ("w1", "+Waiver1")):
+        for key, txt in (("base", "Base"), ("w1", "+Waiver1"), ("w2", "+Waiver2")):
             ttk.Radiobutton(seg, text=txt, value=key, variable=self.basis_var,
                             command=self._on_basis_change).pack(side="left")
         # verdict banner
@@ -453,12 +453,10 @@ class CertiApp:
 
     # ---- PR Status (consolidated Table 1) ----
     def _pr_records(self) -> list:
-        """Records to consolidate: History multi-selection, else every batch."""
-        ids = []
-        if hasattr(self, "tv_hist") and hasattr(self, "_hist_ids"):
-            ids = [self._hist_ids[i] for i in self.tv_hist.selection() if i in self._hist_ids]
-        if not ids:
-            ids = [row["id"] for row in runs.read_index(self.runs_root)]
+        """Records to consolidate: History CHECKED rows, else every batch."""
+        checked = getattr(self, "_hist_checked", set())
+        index_ids = [row["id"] for row in runs.read_index(self.runs_root)]
+        ids = [i for i in index_ids if i in checked] if checked else index_ids
         recs = [runs.read_run_record(self.runs_root, i) for i in ids]
         return [r for r in recs if r]
 
@@ -767,7 +765,7 @@ class CertiApp:
 
         ttk.Button(bar, text="Save PNG", command=save_png).pack(side="right", padx=4)
 
-        def add_table(title, cols, data, arcs_for):
+        def add_table(title, cols, data, arcs_for, detail=False):
             ttk.Label(right, text=title, style="Sec.TLabel").pack(anchor="w", pady=(6, 0))
             wrap = ttk.Frame(right); wrap.pack(fill="both", expand=True)
             tv = ttk.Treeview(wrap, columns=cols, show="headings", height=7, selectmode="browse")
@@ -786,6 +784,12 @@ class CertiApp:
                     state["highlight"] = _af(_data[_tv.index(sel[0])])
                     redraw()
             tv.bind("<<TreeviewSelect>>", on_sel)
+            if detail:
+                def on_dbl(_e, _tv=tv, _data=data):
+                    sel = _tv.selection()
+                    if sel:
+                        self._show_arc_detail(_data[_tv.index(sel[0])], metric)
+                tv.bind("<Double-1>", on_dbl)
 
         def _fmt_cell(v):
             return f"{v:.1f}" if isinstance(v, float) else v
@@ -800,9 +804,38 @@ class CertiApp:
         add_table("Top table points",
                   ["index1", "index2", "n_fail", "worst_rel_pct"], tps,
                   lambda d: arcset(lambda a: _o.arc_indices(a) == (d["index1"], d["index2"])))
-        add_table("Worst arcs",
+        add_table("Worst arcs (double-click for MC/Lib detail)",
                   ["cell", "rel_pct", "abs_err_ps", "direction"], worst,
-                  lambda d: {d["arc"]})
+                  lambda d: {d["arc"]}, detail=True)
+
+    def _show_arc_detail(self, d, metric):
+        """Popup with the full numbers for one outlier arc (MC, Lib, errors, direction)."""
+        tk = self.tk
+        from .analysis.plots import metric_unit
+        unit = metric_unit(metric) or "ps"
+        win = tk.Toplevel(self.root)
+        win.title(f"Arc detail — {d.get('cell', '')}")
+        txt = tk.Text(win, width=72, height=12, font=("DejaVu Sans Mono", 9), padx=10, pady=8)
+        mc, lib = d.get("mc"), d.get("lib")
+        signed = (lib - mc) if (mc is not None and lib is not None) else None
+        lines = [
+            f"Arc        : {d.get('arc', '')}",
+            f"Cell       : {d.get('cell', '')}",
+            f"Table point: index1={d.get('index1', '')}  index2={d.get('index2', '')}",
+            "",
+            f"{metric}:",
+            f"  MC value   : {mc} {unit}",
+            f"  Lib value  : {lib} {unit}",
+            f"  Signed err : {signed if signed is None else round(signed, 4)} {unit}  (Lib - MC)",
+            f"  Abs err    : {round(d.get('abs_err_ps', 0.0), 4)} {unit}",
+            f"  Rel err    : {round(d.get('rel_pct', 0.0), 3)} %",
+            f"  Direction  : {d.get('direction', '')}"
+            + ("   (optimistic = Lib<MC, library claims better than MC)"
+               if d.get("direction") == "optimistic" else ""),
+        ]
+        txt.insert("end", "\n".join(lines))
+        txt.configure(state="disabled")
+        txt.pack(fill="both", expand=True)
 
     def _open_scatter_canvas(self, pts, label, metric):
         """Fallback Canvas scatter when matplotlib is unavailable."""
@@ -838,21 +871,48 @@ class CertiApp:
         ttk = self.ttk
         f = self.tab_hist
         bar = ttk.Frame(f); bar.pack(fill="x", pady=(0, 6))
-        ttk.Label(bar, text="All batches — double-click to open; multi-select then Compare",
+        ttk.Label(bar, text="All batches — click the ☐ box to check; double-click a row to open. "
+                            "Checked rows drive PR Status / Outliers / Common / Compare.",
                   style="Muted.TLabel").pack(side="left")
         ttk.Button(bar, text="Refresh", command=self.refresh_history).pack(side="right")
-        ttk.Button(bar, text="Compare selected", command=self._do_compare).pack(side="right", padx=6)
-        cols = ["Name", "When", "Vendor", "Ver", "Mean Late σ", "Health", "Status"]
-        self.tv_hist = ttk.Treeview(f, columns=cols, show="headings", selectmode="extended")
+        ttk.Button(bar, text="Compare checked", command=self._do_compare).pack(side="right", padx=6)
+        ttk.Button(bar, text="Clear checks", command=self._clear_hist_checks).pack(side="right", padx=6)
+        cols = ["✓", "Name", "When", "Vendor", "Ver", "Mean Late σ", "Health", "Status"]
+        self.tv_hist = ttk.Treeview(f, columns=cols, show="headings", selectmode="browse")
         for c in cols:
             self.tv_hist.heading(c, text=c)
             self.tv_hist.column(c, width=120, anchor="center")
+        self.tv_hist.column("✓", width=36, anchor="center", stretch=False)
         self.tv_hist.column("Name", width=240, anchor="w")
         self.tv_hist.pack(fill="both", expand=True)
         for h, bg in HEALTH_BG.items():
             self.tv_hist.tag_configure(h, background=bg)
         self.tv_hist.bind("<Double-1>", self._open_selected)
+        self.tv_hist.bind("<Button-1>", self._on_hist_click)
         self._hist_ids: dict = {}
+        self._hist_checked: set = set()
+
+    def _on_hist_click(self, evt):
+        # Toggle the check only when the ✓ column (#1) is clicked; let other clicks select.
+        if self.tv_hist.identify_region(evt.x, evt.y) != "cell":
+            return
+        if self.tv_hist.identify_column(evt.x) != "#1":
+            return
+        iid = self.tv_hist.identify_row(evt.y)
+        bid = self._hist_ids.get(iid)
+        if not bid:
+            return
+        if bid in self._hist_checked:
+            self._hist_checked.discard(bid)
+        else:
+            self._hist_checked.add(bid)
+        self.tv_hist.set(iid, "✓", "☑" if bid in self._hist_checked else "☐")
+        return "break"
+
+    def _clear_hist_checks(self):
+        self._hist_checked = set()
+        for iid, bid in self._hist_ids.items():
+            self.tv_hist.set(iid, "✓", "☐")
 
     def _build_compare(self):
         ttk = self.ttk
@@ -1028,9 +1088,12 @@ class CertiApp:
         for iid in self.tv_hist.get_children():
             self.tv_hist.delete(iid)
         self._hist_ids = {}
+        if not hasattr(self, "_hist_checked"):
+            self._hist_checked = set()
         for row in index:
             mls = row.get("mean_late_sigma")
-            vals = (row.get("name", ""), (row.get("when_utc", "") or "").replace("T", " ")[:16],
+            checked = "☑" if row["id"] in self._hist_checked else "☐"
+            vals = (checked, row.get("name", ""), (row.get("when_utc", "") or "").replace("T", " ")[:16],
                     row.get("vendor", ""), row.get("version", ""),
                     "—" if mls is None else f"{mls:.1f}%", row.get("worst_health", ""), row.get("status", ""))
             iid = self.tv_hist.insert("", "end", values=vals, tags=(row.get("worst_health", "OK"),))
@@ -1158,11 +1221,12 @@ class CertiApp:
 
     def _do_compare(self):
         ttk = self.ttk
-        ids = [self._hist_ids[i] for i in self.tv_hist.selection() if i in self._hist_ids]
+        checked = getattr(self, "_hist_checked", set())
+        ids = [row["id"] for row in runs.read_index(self.runs_root) if row["id"] in checked]
         for w in self.cmp_holder.winfo_children():
             w.destroy()
         if len(ids) < 2:
-            ttk.Label(self.cmp_holder, text="Select at least two batches in History.").pack(pady=20)
+            ttk.Label(self.cmp_holder, text="Check at least two batches in History (click the ☐ box).").pack(pady=20)
             self.nb.select(self.tab_cmp); return
         recs = [runs.read_run_record(self.runs_root, i) for i in ids]
         recs = [r for r in recs if r]

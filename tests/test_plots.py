@@ -39,6 +39,24 @@ def test_optimistic_only_filters_to_lib_below_mc():
     assert fig is not None
 
 
+def test_needs_symlog_detects_wide_spread():
+    from cert_data_process.analysis.plots import _needs_symlog
+    assert _needs_symlog([1.0, 2.0, 3.0]) is None          # narrow -> linear
+    assert _needs_symlog([0.5, 5.0, 5000.0]) is not None    # 10000x spread -> symlog
+    assert _needs_symlog([0.0, 0.0]) is None                # not enough data
+
+
+def test_wide_spread_figure_builds(tmp_path):
+    pts = [(100.0, 100.2, True, "combinational_A_..._3_5"),    # ~0.2% rel
+           (100.0, 90.0, True, "combinational_B_..._3_6"),     # 10% rel
+           (10.0, 200.0, True, "combinational_C_..._3_7")]     # 1900% rel -> wide
+    fig = build_scatter_figure(pts, "Late_Sigma", mode="abs_vs_rel", rel_threshold=0.03)
+    assert fig is not None
+    p = tmp_path / "wide.png"
+    save_figure(fig, p, dpi=120)
+    assert p.exists() and p.stat().st_size > 1000
+
+
 def test_fig_reuse_clears_and_redraws():
     fig = build_scatter_figure(PTS, "Late_Sigma", mode="lib_vs_mc")
     again = build_scatter_figure(PTS, "Late_Sigma", mode="abs_vs_rel", fig=fig)
