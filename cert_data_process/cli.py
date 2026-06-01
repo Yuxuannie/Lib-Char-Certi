@@ -187,7 +187,7 @@ def write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def write_manifests(config, stage_execution=None, compatibility_stage_reports=None) -> None:
+def write_manifests(config, stage_execution=None, compatibility_stage_reports=None, audit_summary=None) -> None:
     """Write run and compatibility manifests."""
 
     output_dir = config.output_dir
@@ -214,6 +214,7 @@ def write_manifests(config, stage_execution=None, compatibility_stage_reports=No
         "aliases": [],
         "planned_stages": list(PLANNED_STAGE_STATUS),
         "stage_execution": stage_execution,
+        "audit_summary": audit_summary or {},
         "note": "Functional stages execute only when implemented for the requested pipeline inputs.",
     }
     write_json(output_dir / "run_manifest.json", run_manifest)
@@ -274,21 +275,41 @@ def _record_stage(stage_execution: list, compatibility_stage_reports: list, resu
     return result_obj.failed
 
 
-def execute_stages(config, on_stage=None):
+def execute_stages(config, on_stage=None, on_finding=None):
     """Run the pipeline stages for one config; shared by the CLI and web executor.
 
     ``on_stage(stage_dict)`` is invoked as each stage starts (status='running') and
-    again when it completes, so a live UI can track progress. Returns
-    ``(stage_execution, compatibility_stage_reports, failed)``.
+    again when it completes, so a live UI can track progress.
+    ``on_finding(stage_name, finding_dicts)`` is invoked after each stage completes
+    with any high-signal audit findings for that stage.
+    Returns ``(stage_execution, compatibility_stage_reports, failed)``.
     """
 
+    from . import audit
     from .stages.get_pr_moments import run_get_pr_moments
     from .stages.pr_web_app import run_generate_pr_web_app
 
     materialize_output_tree(config.output_dir)
     stage_execution: list = []
     compatibility_stage_reports: list = []
+    all_findings: list = []
     failed = False
+
+    def _audit(result) -> None:
+        se = result.stage_execution
+        log_text = ""
+        lf = se.get("log_file")
+        if lf:
+            try:
+                from pathlib import Path as _P
+                log_text = _P(lf).read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                log_text = ""
+        findings = audit.audit_stage(se, log_text)
+        dicts = audit.findings_to_dicts(findings)
+        all_findings.extend(dicts)
+        if on_finding and dicts:
+            on_finding(se.get("stage", "?"), dicts)
 
     def _running(name: str, pipeline: str) -> None:
         if on_stage:
@@ -299,6 +320,7 @@ def execute_stages(config, on_stage=None):
         failed = _record_stage(stage_execution, compatibility_stage_reports, result) or failed
         if on_stage:
             on_stage(result.stage_execution)
+        _audit(result)
 
     if config.run_sigma:
         # Full MC is removed (G4): moments are derived from FMC data below.
@@ -335,7 +357,12 @@ def execute_stages(config, on_stage=None):
             on_stage(skipped)
 
     _done(run_generate_pr_web_app(config, stage_execution))
-    write_manifests(config, stage_execution, compatibility_stage_reports)
+    try:
+        audit.write_report(all_findings, config.output_dir / "logs" / "audit_report.txt")
+    except OSError:
+        pass
+    write_manifests(config, stage_execution, compatibility_stage_reports,
+                    audit_summary=audit.summarize(all_findings))
     return stage_execution, compatibility_stage_reports, failed
 
 
