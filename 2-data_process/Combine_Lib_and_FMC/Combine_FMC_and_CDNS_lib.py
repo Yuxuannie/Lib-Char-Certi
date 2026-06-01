@@ -221,6 +221,7 @@ else:
     lib_nominal, lib_early_sigma, lib_late_sigma, lib_skewness, lib_std_dev, lib_mean_shift = [], [], [], [], [], []
     missing_arcs = []  # FMC golden arcs the lib does not cover (reported, kept NaN, never dropped)
     lookup_debug = []  # per-arc lib-lookup diagnostics (why a lib value ends up 0/NaN)
+    sigma_dbg = []  # for matched arcs: which ocv_sigma table we queried vs the child groups actually present
 
     for index, row in fmc_txt_df.iterrows():
         arc_info = row['Arc']
@@ -271,6 +272,12 @@ else:
                     n_matched += 1
 
                     sigma_tbl_grp = each_tim_group.getChildren(sigma_table)
+                    if len(sigma_dbg) < 40:
+                        try:
+                            _present = [c.getHeader() for c in each_tim_group.getChildren()]
+                        except Exception:
+                            _present = ['<error_listing_children>']
+                        sigma_dbg.append((arc_info, sigma_table, len(sigma_tbl_grp), _present))
                     for each_sigma_tbl in sigma_tbl_grp:
                         tbl_obj = each_sigma_tbl.getTable()
                         tbl_value = tbl_obj.getValue()
@@ -305,6 +312,12 @@ else:
                     n_matched += 1
 
                     sigma_tbl_grp = each_tim_group.getChildren(sigma_table)
+                    if len(sigma_dbg) < 40:
+                        try:
+                            _present = [c.getHeader() for c in each_tim_group.getChildren()]
+                        except Exception:
+                            _present = ['<error_listing_children>']
+                        sigma_dbg.append((arc_info, sigma_table, len(sigma_tbl_grp), _present))
                     for each_sigma_tbl in sigma_tbl_grp:
                         tbl_obj = each_sigma_tbl.getTable()
                         tbl_value = tbl_obj.getValue()
@@ -437,3 +450,14 @@ with open(_dbg_file, 'w', newline='') as _df:
 _zero = sum(1 for d in lookup_debug if (d['lib_early'] == 0 or d['lib_late'] == 0))
 _nomatch = sum(1 for d in lookup_debug if d['n_matched'] == 0)
 print(f"Lookup diagnostics: {_dbg_file} | arcs with a zero lib value={_zero} | arcs with no matched timing group={_nomatch}")
+
+# Sigma-table diagnostic: for matched arcs, show the ocv_sigma table we queried
+# vs the group names actually present, so a 0-coverage-with-data case (e.g. slew/hold
+# sigma empty while moments fill) reveals the real lib table name.
+if sigma_dbg:
+    _sig_dbg_file = '{}_sigma_table_debug.txt'.format(basename_noext)
+    with open(_sig_dbg_file, 'w') as _sf:
+        for _arc, _queried, _nfound, _present in sigma_dbg:
+            _sf.write(f"Arc={_arc}\n  queried_sigma_table={_queried} found={_nfound}\n  present_child_groups={_present}\n\n")
+    _empty = sum(1 for d in sigma_dbg if d[2] == 0)
+    print(f"Sigma-table diagnostic: {_sig_dbg_file} | matched arcs sampled={len(sigma_dbg)} | with EMPTY sigma-table lookup={_empty}")
