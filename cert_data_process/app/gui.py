@@ -58,6 +58,40 @@ def short_corner(c: str) -> str:
     return str(c).replace("ssgnp_", "").replace("ssgng_", "").replace("_m40c", "")
 
 
+def _scan_file_region(path, needle, whole_cell, max_lines=8000):
+    """Stream a (possibly huge) file for `needle`; return (numbered_lines, first_line).
+
+    whole_cell=True: from the first match, capture the ENTIRE brace-balanced block
+    (e.g. a full `cell (...) { ... }`). whole_cell=False: collect ALL lines containing
+    `needle` (e.g. every FMC arc row for a cell). Capped at max_lines; never loads the
+    whole file. Pure (no Tk) so it is unit-tested directly."""
+    window, ln = [], 0
+    with Path(path).open(encoding="utf-8", errors="replace") as fh:
+        if whole_cell:
+            started, seen_open, depth = False, False, 0
+            for i, line in enumerate(fh, 1):
+                if not started:
+                    if needle not in line:
+                        continue
+                    started, ln = True, i
+                window.append(f"{i}: {line.rstrip()}")
+                opens, closes = line.count("{"), line.count("}")
+                if opens:
+                    seen_open = True
+                depth += opens - closes
+                if (seen_open and depth <= 0) or len(window) >= max_lines:
+                    break
+        else:
+            for i, line in enumerate(fh, 1):
+                if needle in line:
+                    if not window:
+                        ln = i
+                    window.append(f"{i}: {line.rstrip()}")
+                    if len(window) >= max_lines:
+                        break
+    return window, ln
+
+
 def _parse_abs_tol(text: str, corners: list) -> dict:
     """Parse the Setup abs_tol entry into {corner: ps}.
 
@@ -915,41 +949,49 @@ class CertiApp:
                         fmc_path = p.get("src"); break
         cfg = (getattr(self, "loaded_rec", None) or {}).get("config", {})
         if not fmc_path:
-            fmc_path = cfg.get("fmc_input_dir") or cfg.get("fmc_golden_dir")
+            # Manifest had no per-file src (decks mode / older run): glob the FMC input
+            # dir for the file matching this corner + group (the SCLD/DFDS golden whose
+            # rows carry the per-arc deck path).
+            fdir = cfg.get("fmc_input_dir") or cfg.get("fmc_golden_dir")
+            if fdir and Path(fdir).is_dir():
+                group = "cons" if row_type in ("hold", "mpw") else "delay"
+                cands = [p for p in Path(fdir).glob("*")
+                         if p.is_file() and corner in p.name
+                         and (group in p.name.lower() or row_type in p.name.lower())]
+                if not cands:
+                    cands = [p for p in Path(fdir).glob("*") if p.is_file() and corner in p.name]
+                fmc_path = str(cands[0]) if cands else fdir
         return lib_path, fmc_path
 
-    def _peek_file(self, path, needle, title, context=80):
-        """Stream a (possibly huge) file, find the first line containing `needle`,
-        and show that line + a window after it. Avoids loading the whole .lib."""
+    def _peek_file(self, path, needle, title, whole_cell=False, max_lines=8000):
+        """Stream a (possibly huge) file and show the relevant region for `needle`.
+
+        whole_cell=True (lib): from the matching `cell (...)` line, capture the ENTIRE
+        brace-balanced block (tracks { } depth). whole_cell=False (FMC): collect ALL
+        lines containing the cell (every arc row for that cell). Streamed, never loads
+        the whole file."""
         tk = self.tk
         from tkinter import messagebox
         if not path or not Path(path).is_file():
             return messagebox.showinfo("Peek", f"File not found:\n{path}")
-        hit, window, ln = None, [], 0
         try:
-            with Path(path).open(encoding="utf-8", errors="replace") as fh:
-                for i, line in enumerate(fh, 1):
-                    if hit is None:
-                        if needle in line:
-                            hit, ln = i, i
-                            window.append(f"{i}: {line.rstrip()}")
-                    else:
-                        window.append(f"{i}: {line.rstrip()}")
-                        if len(window) >= context:
-                            break
+            window, ln = _scan_file_region(path, needle, whole_cell, max_lines)
         except OSError as exc:
             return messagebox.showinfo("Peek", f"Read error: {exc}")
-        if hit is None:
+        if not window:
             return messagebox.showinfo("Peek", f"'{needle}' not found in\n{path}")
         win = tk.Toplevel(self.root)
-        win.title(f"{title} — line {ln} of {Path(path).name}")
-        win.geometry("900x520")
+        win.title(f"{title} — {len(window)} line(s) from {Path(path).name}")
+        win.geometry("960x600")
         t = tk.Text(win, wrap="none", font=("DejaVu Sans Mono", 9), padx=8, pady=6)
         sb = self.ttk.Scrollbar(win, orient="vertical", command=t.yview)
-        t.configure(yscrollcommand=sb.set)
-        t.insert("end", f"# {path}\n# first match for '{needle}' at line {ln}\n\n" + "\n".join(window))
+        sbx = self.ttk.Scrollbar(win, orient="horizontal", command=t.xview)
+        t.configure(yscrollcommand=sb.set, xscrollcommand=sbx.set)
+        kind = "cell block" if whole_cell else "matching rows"
+        t.insert("end", f"# {path}\n# {kind} for '{needle}' (first at line {ln})\n\n" + "\n".join(window))
         t.configure(state="disabled")
-        t.pack(side="left", fill="both", expand=True); sb.pack(side="right", fill="y")
+        sb.pack(side="right", fill="y"); sbx.pack(side="bottom", fill="x")
+        t.pack(side="left", fill="both", expand=True)
 
     def _copy_path(self, path):
         from tkinter import messagebox
@@ -1000,7 +1042,7 @@ class CertiApp:
         # Source-file trace-back: copy the path, or peek the cell/arc inside the file.
         src = ttk.LabelFrame(win, text="Trace back to source", padding=8)
         src.pack(fill="x", padx=8, pady=8)
-        def row(label, path, peek_needle, peek_title):
+        def row(label, path, peek_needle, peek_title, whole):
             r = ttk.Frame(src); r.pack(fill="x", pady=2)
             ttk.Label(r, text=label, width=10).pack(side="left")
             shown = (str(path)[:70] + "…") if path and len(str(path)) > 70 else (path or "(not found)")
@@ -1009,10 +1051,11 @@ class CertiApp:
                 ttk.Button(r, text="Copy", width=6,
                            command=lambda p=path: self._copy_path(p)).pack(side="right", padx=2)
                 ttk.Button(r, text="Peek", width=6,
-                           command=lambda p=path, n=peek_needle, t=peek_title:
-                           self._peek_file(p, n, t)).pack(side="right", padx=2)
-        row("Lib file", lib_path, f"cell ({cell})", f"Lib cell {cell}")
-        row("FMC input", fmc_path, cell, f"FMC rows for {cell}")
+                           command=lambda p=path, n=peek_needle, t=peek_title, wc=whole:
+                           self._peek_file(p, n, t, whole_cell=wc)).pack(side="right", padx=2)
+        # Lib: whole cell block (brace-balanced). FMC: all arc rows for the cell.
+        row("Lib file", lib_path, f"cell ({cell})", f"Lib cell {cell}", True)
+        row("FMC input", fmc_path, cell, f"FMC rows for {cell}", False)
 
     def _open_scatter_canvas(self, pts, label, metric):
         """Fallback Canvas scatter when matplotlib is unavailable."""
