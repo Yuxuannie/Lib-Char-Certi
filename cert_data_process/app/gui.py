@@ -58,6 +58,58 @@ def short_corner(c: str) -> str:
     return str(c).replace("ssgnp_", "").replace("ssgng_", "").replace("_m40c", "")
 
 
+def _fmc_corner_matchers(corner: str) -> list:
+    """Substrings to find a corner's FMC file: the full corner, then its voltage token
+    (e.g. '0p475v') which is the most reliable cross-naming match."""
+    import re
+    out = [corner] if corner else []
+    m = re.search(r"\d+p\d+v", corner or "")
+    if m and m.group(0) not in out:
+        out.append(m.group(0))
+    return out
+
+
+def _fmc_deck_for_arc(path, cell, i1, i2):
+    """Best-effort: read an FMC golden CSV and return the per-arc DECK/log path.
+
+    The SCLD golden carries a 'deck' (or 'log') column whose value is the exact
+    fastmontecarlo deck/log that produced this arc's MC value. Match by Cell, then
+    prefer the row whose table point matches (i1, i2). Returns the deck string or None.
+    Streamed; pure (no Tk) so it is unit-tested."""
+    import csv as _csv
+    import re as _re
+    p = Path(path)
+    if not p.is_file():
+        return None
+    try:
+        with p.open(newline="", encoding="utf-8", errors="replace") as fh:
+            reader = _csv.reader(fh)
+            header = next(reader, [])
+            low = [str(h).strip().lower() for h in header]
+            deck_i = next((i for i, h in enumerate(low) if h == "deck"), None)
+            if deck_i is None:
+                deck_i = next((i for i, h in enumerate(low) if "deck" in h or "log" in h), None)
+            cell_i = next((i for i, h in enumerate(low) if h == "cell"), None)
+            point_i = next((i for i, h in enumerate(low) if h == "point"), None)
+            if deck_i is None or cell_i is None:
+                return None
+            want_pt = {str(i1).strip(), str(i2).strip()}
+            best = None
+            for r in reader:
+                if cell_i >= len(r) or deck_i >= len(r) or str(r[cell_i]).strip() != str(cell).strip():
+                    continue
+                deck = str(r[deck_i]).strip()
+                if best is None:
+                    best = deck
+                if point_i is not None and point_i < len(r):
+                    toks = {t for t in _re.split(r"[;,:/ ]", str(r[point_i])) if t.strip()}
+                    if want_pt and want_pt <= toks:
+                        return deck   # exact table-point match wins
+            return best
+    except (OSError, StopIteration):
+        return None
+
+
 def _scan_file_region(path, needle, whole_cell, max_lines=8000):
     """Stream a (possibly huge) file for `needle`; return (numbered_lines, first_line).
 
@@ -955,11 +1007,16 @@ class CertiApp:
             fdir = cfg.get("fmc_input_dir") or cfg.get("fmc_golden_dir")
             if fdir and Path(fdir).is_dir():
                 group = "cons" if row_type in ("hold", "mpw") else "delay"
-                cands = [p for p in Path(fdir).glob("*")
-                         if p.is_file() and corner in p.name
-                         and (group in p.name.lower() or row_type in p.name.lower())]
-                if not cands:
-                    cands = [p for p in Path(fdir).glob("*") if p.is_file() and corner in p.name]
+                files = [p for p in Path(fdir).glob("*") if p.is_file()]
+                cands = []
+                for mt in _fmc_corner_matchers(corner):   # full corner, then voltage token
+                    cands = [p for p in files if mt in p.name
+                             and (group in p.name.lower() or row_type in p.name.lower())]
+                    if cands:
+                        break
+                    cands = [p for p in files if mt in p.name]
+                    if cands:
+                        break
                 fmc_path = str(cands[0]) if cands else fdir
         return lib_path, fmc_path
 
@@ -1056,6 +1113,16 @@ class CertiApp:
         # Lib: whole cell block (brace-balanced). FMC: all arc rows for the cell.
         row("Lib file", lib_path, f"cell ({cell})", f"Lib cell {cell}", True)
         row("FMC input", fmc_path, cell, f"FMC rows for {cell}", False)
+        # The exact per-arc deck/log path, pulled from the FMC golden's 'deck' column.
+        deck = _fmc_deck_for_arc(fmc_path, cell, d.get("index1", ""), d.get("index2", "")) \
+            if fmc_path and Path(str(fmc_path)).is_file() else None
+        if deck:
+            r = ttk.Frame(src); r.pack(fill="x", pady=2)
+            ttk.Label(r, text="FMC deck", width=10).pack(side="left")
+            shown = (deck[:70] + "…") if len(deck) > 70 else deck
+            ttk.Label(r, text=shown, style="Muted.TLabel").pack(side="left", fill="x", expand=True)
+            ttk.Button(r, text="Copy", width=6,
+                       command=lambda p=deck: self._copy_path(p)).pack(side="right", padx=2)
 
     def _open_scatter_canvas(self, pts, label, metric):
         """Fallback Canvas scatter when matplotlib is unavailable."""

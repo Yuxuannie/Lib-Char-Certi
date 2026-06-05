@@ -55,3 +55,27 @@ def test_max_lines_cap(tmp_path):
     p.write_text("INVD1\n" * 100)
     window, _ = _scan_file_region(p, "INVD1", whole_cell=False, max_lines=10)
     assert len(window) == 10
+
+
+def test_fmc_corner_matchers():
+    from cert_data_process.app.gui import _fmc_corner_matchers
+    assert _fmc_corner_matchers("ssgnp_0p475v_0c") == ["ssgnp_0p475v_0c", "0p475v"]
+    assert _fmc_corner_matchers("") == []
+
+
+def test_fmc_deck_for_arc_prefers_table_point(tmp_path):
+    from cert_data_process.app.gui import _fmc_deck_for_arc
+    p = tmp_path / "cons_svt_ssgnp_0p475v_0c.csv"
+    p.write_text(
+        "PVT,Cell,when,point,type,tool,deck\n"
+        "ssgnp,INVD1,a,3;5,hold,fmc,/decks/INVD1_3_5/fastmontecarlo.log\n"
+        "ssgnp,INVD1,b,2;2,hold,fmc,/decks/INVD1_2_2/fastmontecarlo.log\n"
+        "ssgnp,OTHER,c,3;5,hold,fmc,/decks/OTHER.log\n"
+    )
+    # exact table-point (3,5) match wins over the first INVD1 row
+    assert _fmc_deck_for_arc(p, "INVD1", "3", "5") == "/decks/INVD1_3_5/fastmontecarlo.log"
+    # falls back to first cell row when point doesn't match
+    assert _fmc_deck_for_arc(p, "INVD1", "9", "9") == "/decks/INVD1_3_5/fastmontecarlo.log"
+    # no deck column / no cell -> None
+    assert _fmc_deck_for_arc(p, "NOPE", "3", "5") is None
+    assert _fmc_deck_for_arc(tmp_path / "missing.csv", "INVD1", "3", "5") is None
