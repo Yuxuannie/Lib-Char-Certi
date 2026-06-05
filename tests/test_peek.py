@@ -92,3 +92,16 @@ def test_fmc_deck_for_arc_prefers_table_point(tmp_path):
     # no deck column / no cell -> None
     assert _fmc_deck_for_arc(p, "NOPE", "3", "5") is None
     assert _fmc_deck_for_arc(tmp_path / "missing.csv", "INVD1", "3", "5") is None
+
+
+def test_fmc_deck_for_arc_dfds_columns(tmp_path):
+    # DFDS golden: Cell_Name / Arc columns, deck reference, indices embedded in Arc.
+    from cert_data_process.app.gui import _fmc_deck_for_arc
+    p = tmp_path / "fmc_result_n2p_ssgnp_0p450v_m40c_hold.csv"
+    p.write_text(
+        "Cell_Name,Arc,MC_Nominal,tool,deck\n"
+        "SDFK1,hold_SDFK1_D_CP_3_5,0.05,fmc,/sim/0-MCQC/SDFK1_3_5/fastmontecarlo.log\n"
+        "SDFK1,hold_SDFK1_D_CP_2_2,0.04,fmc,/sim/0-MCQC/SDFK1_2_2/fastmontecarlo.log\n"
+    )
+    # matches by cell appearing in the row; prefers the (3,5) table point
+    assert _fmc_deck_for_arc(p, "SDFK1", "3", "5") == "/sim/0-MCQC/SDFK1_3_5/fastmontecarlo.log"

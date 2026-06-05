@@ -96,38 +96,39 @@ def _find_fmc_file(fdir, corner, row_type):
 def _fmc_deck_for_arc(path, cell, i1, i2):
     """Best-effort: read an FMC golden CSV and return the per-arc DECK/log path.
 
-    The SCLD golden carries a 'deck' (or 'log') column whose value is the exact
-    fastmontecarlo deck/log that produced this arc's MC value. Match by Cell, then
-    prefer the row whose table point matches (i1, i2). Returns the deck string or None.
-    Streamed; pure (no Tk) so it is unit-tested."""
+    Column-agnostic: the deck column is any header containing 'deck' or 'log'; the
+    arc/cell is matched by the cell name appearing anywhere in the row (handles both
+    SCLD 'Cell'/'point' and DFDS 'Cell_Name'/'Arc'). Among the cell's rows, prefer
+    the one whose fields contain BOTH table indices (i1, i2). Returns the deck string
+    or None. Streamed; pure (no Tk) so it is unit-tested."""
     import csv as _csv
     import re as _re
     p = Path(path)
     if not p.is_file():
         return None
+    cell_l = str(cell).strip().lower()
+    want_pt = {str(i1).strip(), str(i2).strip()} - {""}
     try:
         with p.open(newline="", encoding="utf-8", errors="replace") as fh:
             reader = _csv.reader(fh)
             header = next(reader, [])
             low = [str(h).strip().lower() for h in header]
-            deck_i = next((i for i, h in enumerate(low) if h == "deck"), None)
-            if deck_i is None:
-                deck_i = next((i for i, h in enumerate(low) if "deck" in h or "log" in h), None)
-            cell_i = next((i for i, h in enumerate(low) if h == "cell"), None)
-            point_i = next((i for i, h in enumerate(low) if h == "point"), None)
-            if deck_i is None or cell_i is None:
+            deck_i = next((i for i, h in enumerate(low) if "deck" in h or "log" in h), None)
+            if deck_i is None or not cell_l:
                 return None
-            want_pt = {str(i1).strip(), str(i2).strip()}
             best = None
             for r in reader:
-                if cell_i >= len(r) or deck_i >= len(r) or str(r[cell_i]).strip() != str(cell).strip():
+                if deck_i >= len(r):
+                    continue
+                rowtext = " ".join(r).lower()
+                if cell_l not in rowtext:
                     continue
                 deck = str(r[deck_i]).strip()
                 if best is None:
                     best = deck
-                if point_i is not None and point_i < len(r):
-                    toks = {t for t in _re.split(r"[;,:/ ]", str(r[point_i])) if t.strip()}
-                    if want_pt and want_pt <= toks:
+                if want_pt:
+                    toks = {t for t in _re.split(r"[;,:/_ ]", rowtext) if t.strip()}
+                    if want_pt <= toks:
                         return deck   # exact table-point match wins
             return best
     except (OSError, StopIteration):
@@ -158,8 +159,9 @@ def _scan_file_region(path, needle, whole_cell, max_lines=8000):
                 if (seen_open and depth <= 0) or len(window) >= max_lines:
                     break
         else:
+            nlow = needle.lower()
             for i, line in enumerate(fh, 1):
-                if needle in line:
+                if nlow in line.lower():            # case-insensitive (DFDS vs SCLD casing)
                     if not window:
                         ln = i
                     window.append(f"{i}: {line.rstrip()}")
