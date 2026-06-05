@@ -999,25 +999,30 @@ class CertiApp:
                 for p in st.get("processed", []):
                     if p.get("corner") == corner and p.get("type") == row_type:
                         fmc_path = p.get("src"); break
-        cfg = (getattr(self, "loaded_rec", None) or {}).get("config", {})
+        # Config for THIS outlier's batch (not whatever was last opened in Results).
+        rec = runs.read_run_record(self.runs_root, rid) or {}
+        cfg = rec.get("config", {})
         if not fmc_path:
             # Manifest had no per-file src (decks mode / older run): glob the FMC input
             # dir for the file matching this corner + group (the SCLD/DFDS golden whose
             # rows carry the per-arc deck path).
             fdir = cfg.get("fmc_input_dir") or cfg.get("fmc_golden_dir")
-            if fdir and Path(fdir).is_dir():
-                group = "cons" if row_type in ("hold", "mpw") else "delay"
-                files = [p for p in Path(fdir).glob("*") if p.is_file()]
-                cands = []
-                for mt in _fmc_corner_matchers(corner):   # full corner, then voltage token
-                    cands = [p for p in files if mt in p.name
-                             and (group in p.name.lower() or row_type in p.name.lower())]
+            if fdir:
+                fmc_path = fdir          # at least show the directory we were given
+                if Path(fdir).is_dir():
+                    group = "cons" if row_type in ("hold", "mpw") else "delay"
+                    files = [p for p in Path(fdir).glob("*") if p.is_file()]
+                    cands = []
+                    for mt in _fmc_corner_matchers(corner):   # full corner, then voltage token
+                        cands = [p for p in files if mt in p.name
+                                 and (group in p.name.lower() or row_type in p.name.lower())]
+                        if cands:
+                            break
+                        cands = [p for p in files if mt in p.name]
+                        if cands:
+                            break
                     if cands:
-                        break
-                    cands = [p for p in files if mt in p.name]
-                    if cands:
-                        break
-                fmc_path = str(cands[0]) if cands else fdir
+                        fmc_path = str(cands[0])   # upgrade to the specific corner file
         return lib_path, fmc_path
 
     def _peek_file(self, path, needle, title, whole_cell=False, max_lines=8000):

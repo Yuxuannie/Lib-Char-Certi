@@ -155,6 +155,36 @@ def test_pr_status_and_outliers_render_with_a_real_record(tmp_path, fake_tk):
     assert fmc_p == "/in/cons_0p475v.csv"
 
 
+def test_resolve_fmc_via_batch_record_config(tmp_path, fake_tk):
+    # When the manifest has no FMC src, the resolver must use THIS batch's record
+    # config (not whatever was last opened), glob the golden dir by voltage token,
+    # and land on the specific corner file + its per-arc deck.
+    import json
+    from cert_data_process.app.gui import CertiApp, _fmc_deck_for_arc
+    from cert_data_process.web import runs
+
+    golden = tmp_path / "golden"; golden.mkdir()
+    f = golden / "cons_h130_svt_ssgnp_0p475v_0c_cworst.csv"
+    f.write_text("PVT,Cell,point,deck\nssgnp,INVD1,3;5,/decks/INVD1_3_5/fmc.log\n")
+
+    rid = "b_units_20260605_000000"
+    runs.write_run_record(tmp_path, rid, {
+        "id": rid, "name": "B", "batch_id": "B",
+        "config": {"fmc_input_dir": str(golden), "fmc_mode": "parsed_scld"},
+        "sigma": [], "moments": [],
+    })
+    runs.update_index(tmp_path, {"id": rid, "name": "B", "when_utc": "2026-06-05T00:00:00"})
+    man = runs.batch_dir(tmp_path, rid) / "run_manifest.json"
+    man.write_text(json.dumps({"stage_execution": [
+        {"stage": "lib_join_sigma", "processed": []}]}))   # no FMC src on purpose
+
+    app = CertiApp(runs_root=tmp_path)
+    app.loaded_rec = {"id": "SOMETHING_ELSE", "config": {}}   # wrong batch loaded
+    _lib, fmc = app._resolve_input_paths(rid, "ssgnp_0p475v_0c", "hold")
+    assert fmc == str(f)                                       # specific corner file, via voltage token
+    assert _fmc_deck_for_arc(fmc, "INVD1", "3", "5") == "/decks/INVD1_3_5/fmc.log"
+
+
 def test_compare_uses_all_metrics(tmp_path, fake_tk):
     from cert_data_process.app.gui import CertiApp
     from cert_data_process.web import runs
