@@ -8,6 +8,7 @@ is created only when CertiApp() is instantiated.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Optional
 
@@ -753,6 +754,8 @@ class CertiApp:
         pts = _perarc.scatter_points(rows, metric)
         if not pts:
             return messagebox.showinfo("Scatter", "No covered arcs to plot.")
+        # Remember context so the arc-detail popup can trace back to the source files.
+        self._scatter_ctx = (rid, corner, row_type)
         try:
             from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
             from ..analysis import plots as _plots
@@ -889,23 +892,94 @@ class CertiApp:
 
         rebuild_tables()
 
-    def _show_arc_detail(self, d, metric):
-        """Popup with the full numbers for one outlier arc (MC, Lib, errors, direction)."""
+    def _resolve_input_paths(self, rid, corner, row_type):
+        """From the run manifest, find the .lib file (lib-join) and FMC input file
+        (FMC stage) used for this (corner, type). Returns (lib_path, fmc_path)."""
+        lib_path = fmc_path = None
+        if not rid:
+            return None, None
+        man = Path(runs.batch_dir(self.runs_root, rid)) / "run_manifest.json"
+        try:
+            data = json.loads(man.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = {}
+        for st in data.get("stage_execution", []):
+            if st.get("stage") == "lib_join_sigma":
+                for p in st.get("processed", []):
+                    name = Path(str(p.get("csv", ""))).name
+                    if f"_{corner}_" in name and row_type in name:
+                        lib_path = p.get("lib"); break
+            elif st.get("stage") == "fmc_combine_data":
+                for p in st.get("processed", []):
+                    if p.get("corner") == corner and p.get("type") == row_type:
+                        fmc_path = p.get("src"); break
+        cfg = (getattr(self, "loaded_rec", None) or {}).get("config", {})
+        if not fmc_path:
+            fmc_path = cfg.get("fmc_input_dir") or cfg.get("fmc_golden_dir")
+        return lib_path, fmc_path
+
+    def _peek_file(self, path, needle, title, context=80):
+        """Stream a (possibly huge) file, find the first line containing `needle`,
+        and show that line + a window after it. Avoids loading the whole .lib."""
         tk = self.tk
+        from tkinter import messagebox
+        if not path or not Path(path).is_file():
+            return messagebox.showinfo("Peek", f"File not found:\n{path}")
+        hit, window, ln = None, [], 0
+        try:
+            with Path(path).open(encoding="utf-8", errors="replace") as fh:
+                for i, line in enumerate(fh, 1):
+                    if hit is None:
+                        if needle in line:
+                            hit, ln = i, i
+                            window.append(f"{i}: {line.rstrip()}")
+                    else:
+                        window.append(f"{i}: {line.rstrip()}")
+                        if len(window) >= context:
+                            break
+        except OSError as exc:
+            return messagebox.showinfo("Peek", f"Read error: {exc}")
+        if hit is None:
+            return messagebox.showinfo("Peek", f"'{needle}' not found in\n{path}")
+        win = tk.Toplevel(self.root)
+        win.title(f"{title} — line {ln} of {Path(path).name}")
+        win.geometry("900x520")
+        t = tk.Text(win, wrap="none", font=("DejaVu Sans Mono", 9), padx=8, pady=6)
+        sb = self.ttk.Scrollbar(win, orient="vertical", command=t.yview)
+        t.configure(yscrollcommand=sb.set)
+        t.insert("end", f"# {path}\n# first match for '{needle}' at line {ln}\n\n" + "\n".join(window))
+        t.configure(state="disabled")
+        t.pack(side="left", fill="both", expand=True); sb.pack(side="right", fill="y")
+
+    def _copy_path(self, path):
+        from tkinter import messagebox
+        try:
+            self.root.clipboard_clear(); self.root.clipboard_append(str(path))
+        except Exception:
+            pass
+        messagebox.showinfo("Copied", f"Path copied to clipboard:\n{path}")
+
+    def _show_arc_detail(self, d, metric):
+        """Popup with the full numbers for one outlier arc + links back to the
+        source .lib and FMC input files (copy path / peek the cell or arc)."""
+        tk, ttk = self.tk, self.ttk
         from ..analysis.plots import metric_unit
         unit = metric_unit(metric) or "ps"
+        rid, corner, row_type = getattr(self, "_scatter_ctx", (None, None, None))
+        lib_path, fmc_path = self._resolve_input_paths(rid, corner, row_type)
+        cell = d.get("cell", "")
         win = tk.Toplevel(self.root)
-        win.title(f"Arc detail — {d.get('cell', '')}")
-        txt = tk.Text(win, width=72, height=12, font=("DejaVu Sans Mono", 9), padx=10, pady=8)
+        win.title(f"Arc detail — {cell}")
+        win.geometry("760x420")
+        txt = tk.Text(win, height=12, font=("DejaVu Sans Mono", 9), padx=10, pady=8)
         mc, lib = d.get("mc"), d.get("lib")
         signed = (lib - mc) if (mc is not None and lib is not None) else None
-        # Effective denominator the engine used = |signed_err| / |rel_frac|.
         ae = d.get("abs_err_ps", 0.0)
         rel = d.get("rel_pct", 0.0)
         denom = (ae / (rel / 100.0)) if rel else None
         lines = [
             f"Arc        : {d.get('arc', '')}",
-            f"Cell       : {d.get('cell', '')}",
+            f"Cell       : {cell}",
             f"Table point: index1={d.get('index1', '')}  index2={d.get('index2', '')}",
             "",
             f"{metric}:",
@@ -921,7 +995,24 @@ class CertiApp:
         ]
         txt.insert("end", "\n".join(lines))
         txt.configure(state="disabled")
-        txt.pack(fill="both", expand=True)
+        txt.pack(fill="x")
+
+        # Source-file trace-back: copy the path, or peek the cell/arc inside the file.
+        src = ttk.LabelFrame(win, text="Trace back to source", padding=8)
+        src.pack(fill="x", padx=8, pady=8)
+        def row(label, path, peek_needle, peek_title):
+            r = ttk.Frame(src); r.pack(fill="x", pady=2)
+            ttk.Label(r, text=label, width=10).pack(side="left")
+            shown = (str(path)[:70] + "…") if path and len(str(path)) > 70 else (path or "(not found)")
+            ttk.Label(r, text=shown, style="Muted.TLabel").pack(side="left", fill="x", expand=True)
+            if path:
+                ttk.Button(r, text="Copy", width=6,
+                           command=lambda p=path: self._copy_path(p)).pack(side="right", padx=2)
+                ttk.Button(r, text="Peek", width=6,
+                           command=lambda p=path, n=peek_needle, t=peek_title:
+                           self._peek_file(p, n, t)).pack(side="right", padx=2)
+        row("Lib file", lib_path, f"cell ({cell})", f"Lib cell {cell}")
+        row("FMC input", fmc_path, cell, f"FMC rows for {cell}")
 
     def _open_scatter_canvas(self, pts, label, metric):
         """Fallback Canvas scatter when matplotlib is unavailable."""

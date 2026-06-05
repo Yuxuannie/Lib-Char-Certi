@@ -89,6 +89,9 @@ def test_app_constructs_and_renders(tmp_path, fake_tk):
          "index1": "3", "index2": "5", "mc": 40.0, "lib": 38.0,
          "abs_err_ps": 2.0, "rel_pct": 5.0, "direction": "optimistic"},
         "Late_Sigma")
+    # source trace-back helpers (no manifest -> graceful None; peek missing file -> dialog)
+    assert app._resolve_input_paths(None, "c", "delay") == (None, None)
+    app._peek_file(None, "cell (A)", "Lib")
     # common-offenders "where it fails" matcher (per group-key)
     arc = "combinational_A_Z_rise_A_rise_NO_CONDITION_3_5"
     off = {"cell": "A", "arc": arc, "index1": "3", "index2": "5"}
@@ -138,6 +141,18 @@ def test_pr_status_and_outliers_render_with_a_real_record(tmp_path, fake_tk):
     assert len(recs) == 1 and recs[0]["id"] == rid
     app._render_pr_status()    # builds the colored pivot grid from real data
     app._render_outliers()     # 92.59 / 91.49 are < 95 -> inserts outlier rows (no per-arc csv -> "?")
+    # source trace-back resolves lib + fmc paths from the run manifest
+    import json
+    man = runs.batch_dir(tmp_path, rid) / "run_manifest.json"
+    man.write_text(json.dumps({"stage_execution": [
+        {"stage": "fmc_combine_data", "processed": [
+            {"corner": "ssgnp_0p475v_0c", "type": "hold", "src": "/in/cons_0p475v.csv"}]},
+        {"stage": "lib_join_sigma", "processed": [
+            {"csv": "/x/fmc_result_n2p_v1p0_ssgnp_0p475v_0c_hold.csv", "lib": "/libs/svt_0p475v.cons.lib"}]},
+    ]}))
+    lib_p, fmc_p = app._resolve_input_paths(rid, "ssgnp_0p475v_0c", "hold")
+    assert lib_p == "/libs/svt_0p475v.cons.lib"
+    assert fmc_p == "/in/cons_0p475v.csv"
 
 
 def test_compare_uses_all_metrics(tmp_path, fake_tk):
