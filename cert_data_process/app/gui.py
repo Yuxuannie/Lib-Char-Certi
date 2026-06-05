@@ -69,6 +69,30 @@ def _fmc_corner_matchers(corner: str) -> list:
     return out
 
 
+def _find_fmc_file(fdir, corner, row_type):
+    """Find the FMC golden file for a corner under `fdir` (recursive, data files only).
+
+    Tries, in order: voltage-token/full-corner match WITH the group (cons/delay) →
+    same match WITHOUT the group → any data file containing the corner token. Returns
+    the path string, or None when nothing matches (caller keeps showing the dir)."""
+    d = Path(fdir)
+    if not d.is_dir():
+        return None
+    group = "cons" if row_type in ("hold", "mpw") else "delay"
+    files = [p for p in d.rglob("*")
+             if p.is_file() and p.suffix.lower() in (".csv", ".rpt", ".txt")]
+    matchers = _fmc_corner_matchers(corner)
+    for require_group in (True, False):
+        for mt in matchers:
+            for p in files:
+                if mt not in p.name:
+                    continue
+                if require_group and not (group in p.name.lower() or row_type in p.name.lower()):
+                    continue
+                return str(p)
+    return None
+
+
 def _fmc_deck_for_arc(path, cell, i1, i2):
     """Best-effort: read an FMC golden CSV and return the per-arc DECK/log path.
 
@@ -996,33 +1020,26 @@ class CertiApp:
                     if f"_{corner}_" in name and row_type in name:
                         lib_path = p.get("lib"); break
             elif st.get("stage") == "fmc_combine_data":
+                group = "cons" if row_type in ("hold", "mpw") else "delay"
                 for p in st.get("processed", []):
-                    if p.get("corner") == corner and p.get("type") == row_type:
+                    src_name = Path(str(p.get("src", ""))).name
+                    exact = p.get("corner") == corner and p.get("type") == row_type
+                    by_name = any(mt in src_name for mt in _fmc_corner_matchers(corner)) and \
+                        (group in src_name.lower() or row_type in src_name.lower())
+                    if (exact or by_name) and p.get("src"):
                         fmc_path = p.get("src"); break
         # Config for THIS outlier's batch (not whatever was last opened in Results).
         rec = runs.read_run_record(self.runs_root, rid) or {}
         cfg = rec.get("config", {})
         if not fmc_path:
-            # Manifest had no per-file src (decks mode / older run): glob the FMC input
-            # dir for the file matching this corner + group (the SCLD/DFDS golden whose
-            # rows carry the per-arc deck path).
+            # No per-file src in the manifest (decks mode / older run): search the FMC
+            # input dir (recursively, data files only) for the corner's golden file.
             fdir = cfg.get("fmc_input_dir") or cfg.get("fmc_golden_dir")
             if fdir:
                 fmc_path = fdir          # at least show the directory we were given
-                if Path(fdir).is_dir():
-                    group = "cons" if row_type in ("hold", "mpw") else "delay"
-                    files = [p for p in Path(fdir).glob("*") if p.is_file()]
-                    cands = []
-                    for mt in _fmc_corner_matchers(corner):   # full corner, then voltage token
-                        cands = [p for p in files if mt in p.name
-                                 and (group in p.name.lower() or row_type in p.name.lower())]
-                        if cands:
-                            break
-                        cands = [p for p in files if mt in p.name]
-                        if cands:
-                            break
-                    if cands:
-                        fmc_path = str(cands[0])   # upgrade to the specific corner file
+                got = _find_fmc_file(fdir, corner, row_type)
+                if got:
+                    fmc_path = got       # upgrade to the specific corner file
         return lib_path, fmc_path
 
     def _peek_file(self, path, needle, title, whole_cell=False, max_lines=8000):
@@ -1034,7 +1051,21 @@ class CertiApp:
         the whole file."""
         tk = self.tk
         from tkinter import messagebox
-        if not path or not Path(path).is_file():
+        if not path:
+            return messagebox.showinfo("Peek", "No path.")
+        if Path(path).is_dir():
+            # Diagnostic: we only resolved to the directory — list its data files so the
+            # exact corner file can be identified (and the matcher fixed if needed).
+            try:
+                names = sorted(p.name for p in Path(path).rglob("*")
+                               if p.is_file() and p.suffix.lower() in (".csv", ".rpt", ".txt"))
+            except OSError as exc:
+                return messagebox.showinfo("Peek", f"Read error: {exc}")
+            window = [f"(directory — could not match a specific corner file for '{needle}')",
+                      f"{len(names)} data file(s) in {path}:", ""] + names
+            ln = 0
+            return self._peek_window(path, needle, window, ln, "Directory listing", False)
+        if not Path(path).is_file():
             return messagebox.showinfo("Peek", f"File not found:\n{path}")
         try:
             window, ln = _scan_file_region(path, needle, whole_cell, max_lines)
@@ -1042,14 +1073,18 @@ class CertiApp:
             return messagebox.showinfo("Peek", f"Read error: {exc}")
         if not window:
             return messagebox.showinfo("Peek", f"'{needle}' not found in\n{path}")
+        kind = "cell block" if whole_cell else "matching rows"
+        self._peek_window(path, needle, window, ln, kind, whole_cell)
+
+    def _peek_window(self, path, needle, window, ln, kind, whole_cell):
+        tk = self.tk
         win = tk.Toplevel(self.root)
-        win.title(f"{title} — {len(window)} line(s) from {Path(path).name}")
+        win.title(f"{kind} — {len(window)} line(s) from {Path(path).name}")
         win.geometry("960x600")
         t = tk.Text(win, wrap="none", font=("DejaVu Sans Mono", 9), padx=8, pady=6)
         sb = self.ttk.Scrollbar(win, orient="vertical", command=t.yview)
         sbx = self.ttk.Scrollbar(win, orient="horizontal", command=t.xview)
         t.configure(yscrollcommand=sb.set, xscrollcommand=sbx.set)
-        kind = "cell block" if whole_cell else "matching rows"
         t.insert("end", f"# {path}\n# {kind} for '{needle}' (first at line {ln})\n\n" + "\n".join(window))
         t.configure(state="disabled")
         sb.pack(side="right", fill="y"); sbx.pack(side="bottom", fill="x")

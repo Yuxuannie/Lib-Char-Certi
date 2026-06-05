@@ -63,6 +63,19 @@ def test_fmc_corner_matchers():
     assert _fmc_corner_matchers("") == []
 
 
+def test_find_fmc_file_recursive_and_lenient(tmp_path):
+    from cert_data_process.app.gui import _find_fmc_file
+    # CSV nested in a subdir, named with the voltage token but not the full corner
+    sub = tmp_path / "svt"; sub.mkdir()
+    f = sub / "cons_h130_pnpn_mb_svt_ssgnp_0p475v_0c_cworst.csv"
+    f.write_text("PVT,Cell\nssgnp,A\n")
+    # hold -> group 'cons'; corner full string not in name but voltage token is
+    assert _find_fmc_file(tmp_path, "ssgnp_0p475v_0c", "hold") == str(f)
+    # delay group should NOT match the cons file (no delay file present)
+    assert _find_fmc_file(tmp_path, "ssgnp_0p475v_0c", "delay") in (None, str(f))
+    assert _find_fmc_file(tmp_path / "nope", "x", "hold") is None
+
+
 def test_fmc_deck_for_arc_prefers_table_point(tmp_path):
     from cert_data_process.app.gui import _fmc_deck_for_arc
     p = tmp_path / "cons_svt_ssgnp_0p475v_0c.csv"
