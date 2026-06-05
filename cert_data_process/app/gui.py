@@ -226,7 +226,8 @@ class CertiApp:
         row = ttk.Frame(f); row.pack(fill="x", pady=4)
         ttk.Label(row, text="Vendor", width=16).pack(side="left")
         for v in ("cdns", "snps"):
-            ttk.Radiobutton(row, text=v.upper(), value=v, variable=self.vendor).pack(side="left", padx=6)
+            ttk.Radiobutton(row, text=v.upper(), value=v, variable=self.vendor,
+                            command=self._on_vendor_change).pack(side="left", padx=6)
 
         self.e_name = self._field(f, "Batch / recipe name", "N2P v0.9 CDNS Best")
         self.e_proc = self._field(f, "Process", "n2p")
@@ -275,6 +276,19 @@ class CertiApp:
         self.cb_lib_type = ttk.Combobox(lrf, state="readonly", width=12, values=["auto", "base", "mb"])
         self.cb_lib_type.current(0)
         self.cb_lib_type.pack(side="left")
+
+        # Input units — the tool converts Lib and FMC to ps internally. Defaults track
+        # vendor/format (CDNS lib=ps, SNPS lib=ns, SCLD FMC=ns, DFDS FMC=ps); change if
+        # your inputs differ. Skew is dimensionless and never converted.
+        uf = ttk.Frame(f); uf.pack(fill="x", pady=4)
+        ttk.Label(uf, text="FMC unit", width=16).pack(side="left")
+        self.cb_fmc_unit = ttk.Combobox(uf, state="readonly", width=8, values=["ps", "ns", "us", "fs"])
+        self.cb_fmc_unit.set("ps")
+        self.cb_fmc_unit.pack(side="left", padx=(0, 12))
+        ttk.Label(uf, text="Lib unit", width=8).pack(side="left")
+        self.cb_lib_unit = ttk.Combobox(uf, state="readonly", width=8, values=["ps", "ns", "us", "fs"])
+        self.cb_lib_unit.set("ps")
+        self.cb_lib_unit.pack(side="left")
 
         # Waiver_2 abs_tol (ps) — hold Late_Sigma only. Either one value applied to all
         # corners, or per-corner "corner=val, corner2=val". User-provided; blank = off.
@@ -1099,6 +1113,14 @@ class CertiApp:
                 "parsed_scld": "FMC dir (parsed SCLD)"}[mode]
         if hasattr(self, "fmc_dir_label"):
             self.fmc_dir_label.configure(text=hint)
+        # Sensible default FMC unit: SCLD golden is ns; decks/DFDS are ps. (User can override.)
+        if hasattr(self, "cb_fmc_unit"):
+            self.cb_fmc_unit.set("ns" if mode == "parsed_scld" else "ps")
+
+    def _on_vendor_change(self):
+        # Sensible default Lib unit: CDNS libs are ps, SNPS libs are ns. (User can override.)
+        if hasattr(self, "cb_lib_unit"):
+            self.cb_lib_unit.set("ns" if self.vendor.get() == "snps" else "ps")
 
     def _gather(self) -> dict:
         types = [t for t, v in self.type_vars.items() if v.get()]
@@ -1116,6 +1138,8 @@ class CertiApp:
             "rc_type": self.cb_rc.get().strip(),
             "library_type": self.cb_lib_type.get().strip() or "auto",
             "abs_tol_ps_by_corner": _parse_abs_tol(self.e_abs_tol.get(), list(self.corners)),
+            "lib_unit": self.cb_lib_unit.get().strip(),
+            "fmc_unit": self.cb_fmc_unit.get().strip(),
         }
         if mode == "decks":
             cfg["fmc_golden_dir"] = self.e_fmc.get().strip()
@@ -1353,6 +1377,8 @@ class CertiApp:
         self.cb_vt.set(cfg.get("vt_type") or "")
         self.cb_rc.set(cfg.get("rc_type") or "")
         self.cb_lib_type.set(cfg.get("library_type") or "auto")
+        self.cb_lib_unit.set(cfg.get("lib_unit") or ("ns" if cfg.get("vendor") == "snps" else "ps"))
+        self.cb_fmc_unit.set(cfg.get("fmc_unit") or ("ns" if cfg.get("fmc_mode") == "parsed_scld" else "ps"))
         at = cfg.get("abs_tol_ps_by_corner") or {}
         self._set_entry(self.e_abs_tol, ", ".join(f"{k}={v}" for k, v in at.items()))
         mode = cfg.get("fmc_mode") or "decks"

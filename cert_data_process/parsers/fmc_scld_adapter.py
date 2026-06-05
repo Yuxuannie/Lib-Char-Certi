@@ -130,24 +130,28 @@ def _common_cols(row: dict, arc: str) -> list:
     ]
 
 
-def map_delay_slew_row(row: dict, norm_type: str) -> list:
+def map_delay_slew_row(row: dict, norm_type: str, value_scale: float = NS_TO_PS) -> list:
+    # value_scale converts the SCLD value unit to ps (default ns->ps). Skewness is
+    # dimensionless and is ALWAYS unscaled (×1.0).
+    s = value_scale
     arc = rebuild_arc(row, norm_type)
     return _common_cols(row, arc) + [
-        _f(row, "nominal", NS_TO_PS),
-        _f(row, "ocv_early_sigma", NS_TO_PS), _f(row, "ocv_early_sigma_ub", NS_TO_PS), _f(row, "ocv_early_sigma_lb", NS_TO_PS),
-        _f(row, "ocv_late_sigma", NS_TO_PS), _f(row, "ocv_late_sigma_ub", NS_TO_PS), _f(row, "ocv_late_sigma_lb", NS_TO_PS),
-        _f(row, "ocv_mean_shift", NS_TO_PS), _f(row, "ocv_mean_shift_ub", NS_TO_PS), _f(row, "ocv_mean_shift_lb", NS_TO_PS),
-        _f(row, "ocv_std_dev", NS_TO_PS), _f(row, "ocv_std_dev_ub", NS_TO_PS), _f(row, "ocv_std_dev_lb", NS_TO_PS),
+        _f(row, "nominal", s),
+        _f(row, "ocv_early_sigma", s), _f(row, "ocv_early_sigma_ub", s), _f(row, "ocv_early_sigma_lb", s),
+        _f(row, "ocv_late_sigma", s), _f(row, "ocv_late_sigma_ub", s), _f(row, "ocv_late_sigma_lb", s),
+        _f(row, "ocv_mean_shift", s), _f(row, "ocv_mean_shift_ub", s), _f(row, "ocv_mean_shift_lb", s),
+        _f(row, "ocv_std_dev", s), _f(row, "ocv_std_dev_ub", s), _f(row, "ocv_std_dev_lb", s),
         _f(row, "ocv_skewness", 1.0), _f(row, "ocv_skewness_ub", 1.0), _f(row, "ocv_skewness_lb", 1.0),
         _table_type(norm_type, row.get("pin_dir", "")),
     ]
 
 
-def map_hold_mpw_row(row: dict, norm_type: str) -> list:
+def map_hold_mpw_row(row: dict, norm_type: str, value_scale: float = NS_TO_PS) -> list:
+    s = value_scale
     arc = rebuild_arc(row, norm_type)
     return _common_cols(row, arc) + [
-        _f(row, "nominal", NS_TO_PS),
-        _f(row, "ocv_late_sigma", NS_TO_PS), _f(row, "ocv_late_sigma_ub", NS_TO_PS), _f(row, "ocv_late_sigma_lb", NS_TO_PS),
+        _f(row, "nominal", s),
+        _f(row, "ocv_late_sigma", s), _f(row, "ocv_late_sigma_ub", s), _f(row, "ocv_late_sigma_lb", s),
         _table_type(norm_type, row.get("pin_dir", "")),
     ]
 
@@ -167,8 +171,11 @@ def _read_scld(path: Path) -> tuple[list[dict], Optional[str]]:
     return out, None
 
 
-def adapt_scld_file(path: Path) -> tuple[dict[str, list[list]], list[str]]:
-    """Split one SCLD file into {norm_type: [normalized rows]}. Returns (by_type, warnings)."""
+def adapt_scld_file(path: Path, value_scale: float = NS_TO_PS) -> tuple[dict[str, list[list]], list[str]]:
+    """Split one SCLD file into {norm_type: [normalized rows]}. Returns (by_type, warnings).
+
+    value_scale converts the SCLD value unit to ps (default ns->ps ×1000). The caller
+    passes a factor derived from the user-declared FMC unit; Skew is never scaled."""
     rows, err = _read_scld(path)
     warnings: list[str] = []
     if err:
@@ -182,9 +189,9 @@ def adapt_scld_file(path: Path) -> tuple[dict[str, list[list]], list[str]]:
         if norm_type is None:
             continue
         if norm_type in ("delay", "slew"):
-            mapped = map_delay_slew_row(row, norm_type)
+            mapped = map_delay_slew_row(row, norm_type, value_scale)
         else:
-            mapped = map_hold_mpw_row(row, norm_type)
+            mapped = map_hold_mpw_row(row, norm_type, value_scale)
         by_type.setdefault(norm_type, []).append(mapped)
     unknown = seen_types - set(TYPE_MAP)
     if unknown:
@@ -201,3 +208,37 @@ def write_normalized(out_dir: Path, node: str, corner: str, norm_type: str, rows
         w.writerow(header)
         w.writerows(rows)
     return path
+
+
+def scale_normalized_mc(csv_path: Path, factor: float) -> None:
+    """Scale the MC value columns of a normalized FMC CSV in place by `factor`.
+
+    Scales every column whose name starts with 'MC_' EXCEPT the dimensionless Skew
+    columns (MC_Skew / MC_Skew_UB / MC_Skew_LB). Used to convert a DFDS FMC CSV from
+    the user-declared unit to ps. A no-op when factor == 1.0."""
+    if factor == 1.0:
+        return
+    path = Path(csv_path)
+    try:
+        with path.open(newline="", encoding="utf-8", errors="replace") as fh:
+            rows = list(csv.reader(fh))
+    except OSError:
+        return
+    if len(rows) < 2:
+        return
+    header = rows[0]
+    scale_idx = [
+        i for i, c in enumerate(header)
+        if str(c).startswith("MC_") and "Skew" not in str(c)
+    ]
+    for r in rows[1:]:
+        for i in scale_idx:
+            if i < len(r):
+                s = str(r[i]).strip()
+                if s and s.lower() not in ("na", "n/a", "nan"):
+                    try:
+                        r[i] = repr(float(s) * factor)
+                    except ValueError:
+                        pass
+    with path.open("w", newline="", encoding="utf-8") as fh:
+        csv.writer(fh).writerows(rows)

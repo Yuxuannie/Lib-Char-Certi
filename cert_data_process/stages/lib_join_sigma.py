@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from cert_data_process.config import CertDataProcessConfig
+from cert_data_process.config import CertDataProcessConfig, unit_factor
 
 
 @dataclass(frozen=True)
@@ -29,8 +29,9 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _build_liberate_cmd(tcl: Path, script: Path, lib_file: Path, csv_path: Path, mode: str) -> list[str]:
-    return [
+def _build_liberate_cmd(tcl: Path, script: Path, lib_file: Path, csv_path: Path, mode: str,
+                        unit_change: "float | None" = None) -> list[str]:
+    cmd = [
         "liberate",
         "--trio",
         str(tcl),
@@ -43,10 +44,17 @@ def _build_liberate_cmd(tcl: Path, script: Path, lib_file: Path, csv_path: Path,
         mode,
         "-nominal_check",
     ]
+    # Only override the combine script's vendor default (CDNS=1, SNPS=1000) when the
+    # user explicitly declared a lib unit; otherwise current behavior is preserved.
+    if unit_change is not None:
+        cmd += ["-unit_change", repr(float(unit_change))]
+    return cmd
 
 
-def _build_liberate_shell_cmd(tcl: Path, script: Path, lib_file: Path, csv_path: Path, mode: str, job_dir: "Path | None" = None) -> str:
-    base = " ".join(_build_liberate_cmd(tcl=tcl, script=script, lib_file=lib_file, csv_path=csv_path, mode=mode))
+def _build_liberate_shell_cmd(tcl: Path, script: Path, lib_file: Path, csv_path: Path, mode: str,
+                              job_dir: "Path | None" = None, unit_change: "float | None" = None) -> str:
+    base = " ".join(_build_liberate_cmd(tcl=tcl, script=script, lib_file=lib_file, csv_path=csv_path,
+                                        mode=mode, unit_change=unit_change))
     # Full per-job temp isolation. Concurrent liberate jobs colliding in a shared
     # temp/cache dir silently dropped ocv_sigma tables (observed: multi-corner runs
     # lost slew/hold sigma -> NO_DATA, while a single-corner run was clean). Pointing
@@ -126,6 +134,10 @@ def _pick_mode_and_lib(
 def run_lib_join_sigma(config: CertDataProcessConfig) -> SigmaLibJoinResult:
     started_at = _utc_now()
     t0 = time.monotonic()
+
+    # Lib value -> ps factor, only when the user declared a lib unit (else the combine
+    # script's vendor default is used: CDNS=1, SNPS=1000). Skew is a ratio and unaffected.
+    lib_unit_change = unit_factor(config.lib_unit) if config.lib_unit else None
 
     output_dir = config.output_dir.resolve()
     normalized_dir = (output_dir / "normalized" / "fmc").resolve()
@@ -296,7 +308,8 @@ def run_lib_join_sigma(config: CertDataProcessConfig) -> SigmaLibJoinResult:
         job_dir = combined_dir / f".libjob_{csv_path.stem}"
         shutil.rmtree(job_dir, ignore_errors=True)
         job_dir.mkdir(parents=True, exist_ok=True)
-        shell_cmd = _build_liberate_shell_cmd(tcl=tcl, script=script, lib_file=lib_file, csv_path=csv_path, mode=mode, job_dir=job_dir)
+        shell_cmd = _build_liberate_shell_cmd(tcl=tcl, script=script, lib_file=lib_file, csv_path=csv_path,
+                                              mode=mode, job_dir=job_dir, unit_change=lib_unit_change)
         try:
             proc = subprocess.run(["csh", "-fc", shell_cmd], cwd=str(job_dir), capture_output=True, text=True)
         except FileNotFoundError:

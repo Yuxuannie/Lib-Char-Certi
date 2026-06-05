@@ -191,9 +191,10 @@ parser.add_argument("-lib_path", help="Input library path and filename", dest="i
 parser.add_argument("-txt_path", help="Input txt path with value columns", dest="input_txtpath", default=None)
 parser.add_argument("-nominal_check", help="Boolean flag (True or False): If present means Nominal is needed to compare, else ignore", action='store_true')
 parser.add_argument("-mode", choices=['Delay', 'Slew', 'Hold'], help="Select a Data Type: Delay, Slew, Hold", dest="mode", required=True)
- 
-unit_change = 1  # cdns libs are already in picoseconds
+parser.add_argument("-unit_change", type=float, default=1.0, help="Lib value -> ps factor (CDNS default 1; user lib_unit overrides). Skew is a ratio and is unaffected.")
+
 args = parser.parse_args()
+unit_change = args.unit_change  # convert lib values to ps; default 1 (CDNS already ps)
 lib_file_path = args.input_libpath
 txt_file_path = args.input_txtpath
 base_name = os.path.basename(txt_file_path)

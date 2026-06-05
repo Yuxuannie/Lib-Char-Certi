@@ -9,6 +9,16 @@ from typing import Dict, Iterable, Optional, Sequence, Tuple
 SUPPORTED_VENDORS = ("cdns", "snps")
 SUPPORTED_TYPES = ("delay", "slew", "hold", "mpw")
 
+# Input time units the user may declare for Lib / FMC. Internal common unit is ps;
+# each side is scaled to ps by this factor. Skew is dimensionless and is NEVER scaled.
+UNIT_TO_PS = {"ps": 1.0, "ns": 1000.0, "us": 1_000_000.0, "fs": 0.001}
+SUPPORTED_UNITS = tuple(UNIT_TO_PS)
+
+
+def unit_factor(unit: str) -> float:
+    """Multiplier to convert a value in `unit` to picoseconds (1.0 if unknown/empty)."""
+    return UNIT_TO_PS.get((unit or "").strip().lower(), 1.0)
+
 
 @dataclass(frozen=True)
 class CertDataProcessConfig:
@@ -39,6 +49,11 @@ class CertDataProcessConfig:
     # Library structure hint: "base" | "mb" (multi-bit) | "auto". Metadata only;
     # lib-join pin lookup is always bundle-aware, so this does not gate correctness.
     library_type: str = "auto"
+    # Input time units the user declares for their Lib and FMC data. Empty = keep the
+    # current vendor/format default (CDNS lib=ps, SNPS lib=ns, SCLD FMC=ns, DFDS FMC=ps);
+    # a set value (ps/ns/us/fs) scales that side to ps. Skew is dimensionless, never scaled.
+    lib_unit: str = ""
+    fmc_unit: str = ""
     # Waiver_2 (abs_tol): user-assigned absolute tolerance in ps, per corner. Applies
     # to HOLD Late_Sigma only. A hold arc with |Lib-MC| <= abs_tol[corner] is waived.
     # User-provided only — never inferred. Empty/missing corner => waiver_2 inactive there.
@@ -108,6 +123,8 @@ def build_config(
     rc_type: str = "",
     library_type: str = "auto",
     abs_tol_ps_by_corner: Optional[Dict[str, float]] = None,
+    lib_unit: str = "",
+    fmc_unit: str = "",
 ) -> CertDataProcessConfig:
     """Build and validate a :class:`CertDataProcessConfig`."""
 
@@ -154,7 +171,15 @@ def build_config(
         rc_type=(rc_type or "").strip(),
         library_type=((library_type or "auto").strip().lower() or "auto"),
         abs_tol_ps_by_corner=_clean_abs_tol(abs_tol_ps_by_corner),
+        lib_unit=_clean_unit(lib_unit),
+        fmc_unit=_clean_unit(fmc_unit),
     )
+
+
+def _clean_unit(unit: Optional[str]) -> str:
+    """Normalize a user-declared unit to a supported lowercase value, or '' (default)."""
+    u = (unit or "").strip().lower()
+    return u if u in UNIT_TO_PS else ""
 
 
 def _clean_abs_tol(raw: Optional[Dict[str, float]]) -> Dict[str, float]:

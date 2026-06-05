@@ -17,7 +17,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from cert_data_process.config import CertDataProcessConfig
+from cert_data_process.config import CertDataProcessConfig, unit_factor
+from cert_data_process.parsers.fmc_scld_adapter import scale_normalized_mc
 from cert_data_process.parsers.fmc_log import parse_fastmontecarlo_log
 from cert_data_process.parsers.summary_csv import parse_summary_csv
 
@@ -231,6 +232,9 @@ def run_fmc_combine_data(config: CertDataProcessConfig) -> FmcCombineDataResult:
 
             if arc_count_total > 0:
                 _write_csv(output_csv, type_info, rows)
+                # Decks FMC defaults to ps; scale to ps only if the user declared a unit.
+                if config.fmc_unit:
+                    scale_normalized_mc(output_csv, unit_factor(config.fmc_unit))
 
             failures.extend(pair_failures)
             processed_entry = {

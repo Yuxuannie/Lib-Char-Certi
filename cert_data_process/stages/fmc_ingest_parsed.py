@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from cert_data_process.config import CertDataProcessConfig
+from cert_data_process.config import CertDataProcessConfig, unit_factor
 from cert_data_process.parsers import fmc_scld_adapter as scld
 
 _DELAY_REQUIRED = {"Arc", "MC_Nominal", "MC_Early_Sigma", "MC_Late_Sigma", "Table_Type"}
@@ -116,6 +116,12 @@ def run_fmc_ingest_parsed(config: CertDataProcessConfig) -> FmcIngestResult:
     in_dir = Path(in_dir)
     all_files = [p for p in in_dir.iterdir() if p.is_file() and p.suffix.lower() == ".csv"]
 
+    # FMC unit -> ps factor. Default preserves current behavior: SCLD assumes ns
+    # (×1000), DFDS assumes ps (×1). A user-declared fmc_unit overrides both.
+    scld_scale = unit_factor(config.fmc_unit) if config.fmc_unit else scld.NS_TO_PS
+    dfds_factor = unit_factor(config.fmc_unit) if config.fmc_unit else 1.0
+    log_lines.append(f"fmc_unit={config.fmc_unit or '(default)'} scld_scale={scld_scale} dfds_factor={dfds_factor}")
+
     if config.fmc_mode == "parsed_dfds":
         for corner in config.corners:
             for type_info in config.types:
@@ -134,6 +140,7 @@ def run_fmc_ingest_parsed(config: CertDataProcessConfig) -> FmcIngestResult:
                 out_dir.mkdir(parents=True, exist_ok=True)
                 dst = out_dir / f"fmc_result_{node}_{corner}_{type_info}.csv"
                 shutil.copyfile(src, dst)
+                scld.scale_normalized_mc(dst, dfds_factor)  # ps unless user declared otherwise
                 processed.append({"corner": corner, "type": type_info, "src": str(src), "out": str(dst)})
                 log_lines.append(f"OK   corner={corner} type={type_info} <- {src.name}")
     else:  # parsed_scld
@@ -156,7 +163,7 @@ def run_fmc_ingest_parsed(config: CertDataProcessConfig) -> FmcIngestResult:
                         failures.append({"corner": corner, "type": t, "reason": "no_scld_file",
                                          "detail": f"No SCLD '{group}' file containing corner '{corner}'"})
                     continue
-                by_type, warns = scld.adapt_scld_file(src)
+                by_type, warns = scld.adapt_scld_file(src, value_scale=scld_scale)
                 for w in warns:
                     log_lines.append(f"warn: {w}")
                 adapted_cache[group] = {"src": src, "by_type": by_type}

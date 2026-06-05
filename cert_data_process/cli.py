@@ -158,6 +158,14 @@ def build_parser() -> argparse.ArgumentParser:
         default="auto",
         help="Library structure hint: base, mb (multi-bit), or auto. Metadata only; lib-join is always bundle-aware.",
     )
+    parser.add_argument(
+        "--lib-unit", default="", choices=("", "ps", "ns", "us", "fs"),
+        help="Time unit of the LIB inputs (ps/ns/us/fs). Empty = vendor default (CDNS ps, SNPS ns).",
+    )
+    parser.add_argument(
+        "--fmc-unit", default="", choices=("", "ps", "ns", "us", "fs"),
+        help="Time unit of the FMC inputs (ps/ns/us/fs). Empty = format default (SCLD ns, DFDS ps).",
+    )
     parser.add_argument("--lib-dir", required=True, help="Directory containing .lib files.")
     parser.add_argument("--output-dir", required=True, help="Output directory for stable artifacts.")
     parser.add_argument(
@@ -389,6 +397,8 @@ def run(argv: Optional[Iterable[str]] = None) -> int:
             vt_type=args.vt_type,
             rc_type=args.rc_type,
             library_type=args.library_type,
+            lib_unit=args.lib_unit,
+            fmc_unit=args.fmc_unit,
         )
     except ValueError as exc:
         parser.error(str(exc))
