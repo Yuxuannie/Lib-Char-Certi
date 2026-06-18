@@ -220,6 +220,9 @@ def coverage_text(row: dict) -> str:
 
 # ---------------- Tk app ----------------
 class CertiApp:
+    # Voltage Margin (Analysis) tab — hidden for v1 (design still in flux).
+    SHOW_ANALYSIS = False
+
     def __init__(self, runs_root: Any = None, batch_concurrency: int = 2, liberate_budget: int = 4):
         import tkinter as tk
         from tkinter import ttk
@@ -315,11 +318,16 @@ class CertiApp:
         self.tab_analysis = ttk.Frame(self.nb, padding=12)
         self.tab_hist = ttk.Frame(self.nb, padding=12)
         self.tab_cmp = ttk.Frame(self.nb, padding=12)
-        for f, t in [(self.tab_setup, "Setup"), (self.tab_pipe, "Pipeline"),
-                     (self.tab_res, "Results"), (self.tab_pr, "PR Status"),
-                     (self.tab_out, "Outliers"), (self.tab_common, "Common"),
-                     (self.tab_analysis, "Analysis"), (self.tab_hist, "History"),
-                     (self.tab_cmp, "Compare")]:
+        tabs = [(self.tab_setup, "Setup"), (self.tab_pipe, "Pipeline"),
+                (self.tab_res, "Results"), (self.tab_pr, "PR Status"),
+                (self.tab_out, "Outliers"), (self.tab_common, "Common")]
+        # Voltage Margin (Analysis) is hidden for v1 — its underlying design is still
+        # in flux and would confuse users. Flip SHOW_ANALYSIS to re-enable; the tab and
+        # its handlers (_build_analysis/_run_vm/_render_vm) are otherwise self-contained.
+        if self.SHOW_ANALYSIS:
+            tabs.append((self.tab_analysis, "Analysis"))
+        tabs += [(self.tab_hist, "History"), (self.tab_cmp, "Compare")]
+        for f, t in tabs:
             self.nb.add(f, text=t)
         self._build_setup()
         self._build_pipeline()
@@ -327,7 +335,8 @@ class CertiApp:
         self._build_pr_status()
         self._build_outliers()
         self._build_common()
-        self._build_analysis()
+        if self.SHOW_ANALYSIS:
+            self._build_analysis()
         self._build_history()
         self._build_compare()
 
@@ -422,7 +431,8 @@ class CertiApp:
         self.cb_mode.pack(side="left")
         self.cb_mode.bind("<<ComboboxSelected>>", lambda e: self._on_mode_change())
 
-        self.e_fmc = self._dir_field(f, "FMC dir")
+        self.e_fmc = self._dir_field(f, "FMC dir (decks)",
+                                     on_label=lambda lbl: setattr(self, "fmc_dir_label", lbl))
         self.e_lib = self._dir_field(f, "Lib dir")
 
         actions = ttk.Frame(f); actions.pack(fill="x", pady=(14, 0))
@@ -439,11 +449,13 @@ class CertiApp:
         e = ttk.Entry(row); e.insert(0, default); e.pack(side="left", fill="x", expand=True)
         return e
 
-    def _dir_field(self, parent, label):
+    def _dir_field(self, parent, label, on_label=None):
         ttk = self.ttk
         from tkinter import filedialog
         row = ttk.Frame(parent); row.pack(fill="x", pady=4)
-        ttk.Label(row, text=label, width=16).pack(side="left")
+        lbl = ttk.Label(row, text=label, width=16); lbl.pack(side="left")
+        if on_label is not None:
+            on_label(lbl)
         e = ttk.Entry(row); e.pack(side="left", fill="x", expand=True)
         ttk.Button(row, text="Browse",
                    command=lambda: self._browse(e, filedialog)).pack(side="left", padx=4)
@@ -698,6 +710,11 @@ class CertiApp:
         self.tv_out.column("Batch · Corner", width=210, anchor="w")
         self.tv_out.pack(fill="both", expand=True)
         self.tv_out.bind("<Double-1>", self._open_scatter_selected)
+        self.out_hint = ttk.Label(
+            f, style="Muted.TLabel",
+            text="Click Build to list sub-95% points.  “?” = per-arc detail unavailable "
+                 "(combined/sigma CSV not found for that corner/type).")
+        self.out_hint.pack(anchor="w", pady=(4, 0))
         self._out_meta: dict = {}
 
     def _render_outliers(self):
@@ -731,6 +748,14 @@ class CertiApp:
                         "" if br.get("worst_rel_pct") is None else f"{br['worst_rel_pct']:.1f}"))
                     self._out_meta[iid] = (rid, corner, prow["type"], prow["metric"],
                                            f"{prow['label']} — {bid} · {short_corner(corner)}")
+        if not self.tv_out.get_children():
+            self.out_hint.configure(
+                text="No sub-95% points found — every metric passes, or no batch is loaded "
+                     "(open/select a batch in History first).")
+        else:
+            self.out_hint.configure(
+                text="Double-click a row for the outlier scatter.  “?” = per-arc detail "
+                     "unavailable (combined/sigma CSV not found for that corner/type).")
 
     # ---- Common offenders (cross-corner / cross-batch) ----
     def _build_common(self):
@@ -759,6 +784,10 @@ class CertiApp:
         self.tv_common.column("Offender", width=280, anchor="w")
         self.tv_common.pack(fill="both", expand=True)
         self.tv_common.bind("<Double-1>", self._show_common_contexts)
+        self.common_hint = ttk.Label(
+            f, style="Muted.TLabel",
+            text="Pick a metric row and click Build to find offenders shared across contexts.")
+        self.common_hint.pack(anchor="w", pady=(4, 0))
         self._common_meta: dict = {}
 
     def _render_common(self):
@@ -792,6 +821,13 @@ class CertiApp:
                 d["key"], d["n_contexts"], d["n_fail_total"], f"{d['worst_rel_pct']:.1f}",
                 f"{d['worst_err_ps']:.2f}", d["polarity"]))
             self._common_meta[iid] = d
+        if not offenders:
+            self.common_hint.configure(
+                text="No common offenders found for this metric — no per-arc failures shared "
+                     "across the loaded/selected batches (load batches in History first).")
+        else:
+            self.common_hint.configure(
+                text=f"{len(offenders)} offender(s) — double-click one to see where it fails.")
 
     def _offender_matches(self, arc: str, d: dict) -> bool:
         """Does a failing arc belong to this offender, given the active group key?"""
@@ -871,7 +907,9 @@ class CertiApp:
         try:
             from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
             from ..analysis import plots as _plots
-        except Exception:
+        except ImportError:
+            # Only fall back when matplotlib is genuinely absent — a narrow except so real
+            # bugs in the enriched panel surface instead of silently degrading to Canvas.
             return self._open_scatter_canvas(pts, label, metric)
         self._open_scatter_mpl(label, metric, rows, pts, FigureCanvasTkAgg, NavigationToolbar2Tk, _plots)
 
@@ -1096,8 +1134,12 @@ class CertiApp:
         from tkinter import messagebox
         try:
             self.root.clipboard_clear(); self.root.clipboard_append(str(path))
-        except Exception:
-            pass
+        except Exception as exc:
+            # Don't claim success when the clipboard is unavailable (common over X11);
+            # show the path so the user can copy it by hand.
+            return messagebox.showwarning(
+                "Copy failed",
+                f"Could not access the clipboard ({exc}).\nCopy this path manually:\n\n{path}")
         messagebox.showinfo("Copied", f"Path copied to clipboard:\n{path}")
 
     def _show_arc_detail(self, d, metric):
@@ -1397,6 +1439,17 @@ class CertiApp:
             return messagebox.showerror("Missing corners", "Add at least one corner.")
         if not cfg["types"]:
             return messagebox.showerror("Missing types", "Select at least one timing type.")
+        # Don't let a typo in abs_tol silently disable Waiver_2: if text was entered but
+        # nothing parsed, make the user confirm running with W2 off.
+        abs_tol_raw = self.e_abs_tol.get().strip()
+        if abs_tol_raw and not cfg["abs_tol_ps_by_corner"]:
+            if not messagebox.askyesno(
+                    "abs_tol not understood",
+                    f"The abs_tol entry '{abs_tol_raw}' could not be parsed into any "
+                    "positive ps value, so Waiver_2 (hold abs_tol) will be OFF.\n\n"
+                    "Expected: a single number (e.g. 19.5) or per-corner "
+                    "'corner=val, corner2=val'.\n\nRun anyway with Waiver_2 off?"):
+                return
         try:
             self.active_job = self.manager.submit(cfg)
         except ValueError as exc:
