@@ -1,6 +1,6 @@
 """Tests for the per-type results view + certification verdict + export (B)."""
 
-from cert_data_process.web import summary as S
+from cert_data_process.runtime import summary as S
 
 _REC = {
     "sigma": [

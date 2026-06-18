@@ -13,8 +13,7 @@ from typing import Any
 
 from . import runs
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_TEMPLATE = _REPO_ROOT / "gui" / "certi_console.html"
+_TEMPLATE = Path(__file__).resolve().parents[1] / "web_assets" / "certi_console.html"
 
 
 def _console_html() -> str:

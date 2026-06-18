@@ -120,7 +120,7 @@ def test_app_constructs_and_renders(tmp_path, fake_tk):
 
 def test_pr_status_and_outliers_render_with_a_real_record(tmp_path, fake_tk):
     from cert_data_process.app.gui import CertiApp
-    from cert_data_process.web import runs
+    from cert_data_process.runtime import runs
 
     rid = "b3_svt_20260601_000000"
     runs.write_run_record(tmp_path, rid, {
@@ -164,7 +164,7 @@ def test_resolve_fmc_via_batch_record_config(tmp_path, fake_tk):
     # and land on the specific corner file + its per-arc deck.
     import json
     from cert_data_process.app.gui import CertiApp, _fmc_deck_for_arc
-    from cert_data_process.web import runs
+    from cert_data_process.runtime import runs
 
     golden = tmp_path / "golden"; golden.mkdir()
     f = golden / "cons_h130_svt_ssgnp_0p475v_0c_cworst.csv"
@@ -190,7 +190,7 @@ def test_resolve_fmc_via_batch_record_config(tmp_path, fake_tk):
 
 def test_compare_uses_all_metrics(tmp_path, fake_tk):
     from cert_data_process.app.gui import CertiApp
-    from cert_data_process.web import runs
+    from cert_data_process.runtime import runs
 
     def _rec(rid, bid, ldelay):
         return {"id": rid, "name": bid, "batch_id": bid,

@@ -2,7 +2,7 @@
 
 import csv
 
-from cert_data_process.web.summary import build_sigma_rows
+from cert_data_process.runtime.summary import build_sigma_rows
 from cert_data_process.analysis.consolidate import PR_ROWS, pr_color, consolidate_pr
 
 

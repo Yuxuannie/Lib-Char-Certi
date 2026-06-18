@@ -1,4 +1,4 @@
-"""Launch the Lib-Char-Certi console server: `python -m cert_data_process.web`."""
+"""Launch the Lib-Char-Certi console server: `python -m cert_data_process.runtime`."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ def _harden_stdout() -> None:
 def main() -> None:
     _harden_stdout()
     ap = argparse.ArgumentParser(
-        prog="cert_data_process.web",
+        prog="cert_data_process.runtime",
         description="Lib-Char-Certi local console server (configure, launch, view, compare).",
     )
     ap.add_argument("--runs-dir", default=None, help="Runs root (default ./certi_runs or $CERTI_RUNS_DIR).")

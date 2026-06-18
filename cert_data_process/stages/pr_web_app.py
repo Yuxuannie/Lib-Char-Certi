@@ -2,7 +2,7 @@
 
 Reads the run artifacts (stage results + pr/sigma + pr/moments PR tables), builds
 a CERTI_DATA object and injects it into the self-contained console template
-(gui/certi_console.html) written to web_app/index.html. Air-gap safe (stdlib
+(web_assets/certi_console.html) written to web_app/index.html. Air-gap safe (stdlib
 only, no CDN/npm). Falls back to a minimal page if the template is unavailable.
 """
 
@@ -17,8 +17,7 @@ from typing import Any, Optional
 
 from cert_data_process.config import CertDataProcessConfig
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_TEMPLATE = _REPO_ROOT / "gui" / "certi_console.html"
+_TEMPLATE = Path(__file__).resolve().parents[1] / "web_assets" / "certi_console.html"
 _PIPELINE_STAGES = {
     "fmc_combine_data", "lib_join_sigma", "build_pr_table",
     "get_pr_moments", "generate_pr_web_app",
@@ -156,7 +155,7 @@ def _fallback_html(config: CertDataProcessConfig, certi_data: dict) -> str:
     return (
         "<!doctype html><meta charset='utf-8'><title>cert_data_process run</title>"
         f"<h1>{_esc(batch['name'])}</h1>"
-        "<p>Console template (gui/certi_console.html) not found; minimal view.</p>"
+        "<p>Console template (web_assets/certi_console.html) not found; minimal view.</p>"
         "<table border=1 cellpadding=6><tr><th>Corner</th><th>Type</th>"
         "<th>Late Base PR</th><th>Coverage</th><th>Data_Health</th></tr>"
         f"{rows}</table>"

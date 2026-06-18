@@ -10,7 +10,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from ..web import runs
+from ..runtime import runs
 
 
 def _harden_stdout() -> None:
@@ -50,7 +50,7 @@ def main() -> None:
         import tkinter  # noqa: F401
     except Exception:
         print("ERROR: this Python has no Tkinter; cannot launch the desktop app.")
-        print("  Run the test build instead, or use: python -m cert_data_process.web")
+        print("  Run the test build instead, or use: python -m cert_data_process.runtime")
         raise SystemExit(2)
 
     from .gui import CertiApp

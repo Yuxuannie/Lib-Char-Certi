@@ -12,9 +12,9 @@ import json
 from pathlib import Path
 from typing import Any, Optional
 
-from ..web import runs
-from ..web import summary as _summary
-from ..web.executor import JobManager
+from ..runtime import runs
+from ..runtime import summary as _summary
+from ..runtime.executor import JobManager
 from ..analysis import consolidate as _consolidate
 from ..analysis import outliers as _outliers
 from ..analysis import perarc as _perarc
