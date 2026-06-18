@@ -2,7 +2,7 @@
 
 G4: Full MC is removed. Moments are computed from the same FMC combine RPT used
 by the sigma stage (`combined/sigma/*_fmc_cdns_lib_comp.rpt`), via
-`2-data_process/get_PR/Moments/check_moments_from_fmc.py`. Outputs land in
+`engines/get_pr/Moments/check_moments_from_fmc.py`. Outputs land in
 `pr/moments/` alongside a terminal print, mirroring the sigma PR stage.
 """
 
@@ -42,7 +42,7 @@ def run_get_pr_moments(config: CertDataProcessConfig) -> MomentsPrResult:
     pr_dir = (output_dir / "pr" / "moments").resolve()
     pr_dir.mkdir(parents=True, exist_ok=True)
     repo_root = Path(__file__).resolve().parents[2]
-    script = (repo_root / "2-data_process/get_PR/Moments/check_moments_from_fmc.py").resolve()
+    script = (Path(__file__).resolve().parents[1] / "engines/get_pr/Moments/check_moments_from_fmc.py").resolve()
 
     moments_types = [t for t in config.types if t in {"delay", "slew"}]
     logs_dir = (output_dir / "logs").resolve()

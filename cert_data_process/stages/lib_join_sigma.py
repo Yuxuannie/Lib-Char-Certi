@@ -145,8 +145,9 @@ def run_lib_join_sigma(config: CertDataProcessConfig) -> SigmaLibJoinResult:
     combined_dir.mkdir(parents=True, exist_ok=True)
 
     repo_root = Path(__file__).resolve().parents[2]
-    script = (repo_root / "2-data_process/Combine_Lib_and_FMC/Combine_FMC_and_CDNS_lib.py").resolve()
-    tcl = (repo_root / "2-data_process/Combine_Lib_and_FMC/run_ldbx.tcl").resolve()
+    combine_dir = Path(__file__).resolve().parents[1] / "engines" / "combine"
+    script = (combine_dir / "Combine_FMC_and_CDNS_lib.py").resolve()
+    tcl = (combine_dir / "run_ldbx.tcl").resolve()
 
     logs_dir = (output_dir / "logs").resolve()
     logs_dir.mkdir(parents=True, exist_ok=True)

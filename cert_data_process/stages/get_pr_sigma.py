@@ -34,7 +34,7 @@ def run_build_pr_table(config: CertDataProcessConfig) -> PrTableResult:
     output_dir = config.output_dir.resolve()
     root_path = (output_dir / "combined" / "sigma").resolve()
     repo_root = Path(__file__).resolve().parents[2]
-    script = (repo_root / "2-data_process/get_PR/Sigma/check_sigma_with_waivers.py").resolve()
+    script = (Path(__file__).resolve().parents[1] / "engines/get_pr/Sigma/check_sigma_with_waivers.py").resolve()
     pr_dir = (output_dir / "pr" / "sigma").resolve()
     pr_dir.mkdir(parents=True, exist_ok=True)
     cmd = [

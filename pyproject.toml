@@ -7,6 +7,10 @@ name = "cert-data-process"
 version = "1.0.0"
 description = "Library characterization certification data_process pipeline"
 requires-python = ">=3.9"
+# Real certification runs invoke the relocated engines (cert_data_process/engines/),
+# which use pandas/numpy. The Combine (lib-join) step additionally needs the
+# EDA-provided `ldbx` Python module, which is not installable from PyPI.
+dependencies = ["pandas", "numpy"]
 
 [project.optional-dependencies]
 # matplotlib powers the enriched outlier scatter; the GUI degrades to a built-in
@@ -19,3 +23,14 @@ cert_data_process_app = "cert_data_process.app.__main__:main"
 
 [tool.setuptools.packages.find]
 include = ["cert_data_process*"]
+
+# Non-module files that must ship inside the package (relocated engine scripts,
+# the HTML console template, and the bundled demo run).
+[tool.setuptools.package-data]
+cert_data_process = [
+    "engines/**/*.py",
+    "engines/**/*.tcl",
+    "engines/**/*.md",
+    "web_assets/*.html",
+    "demo_run/**/*",
+]

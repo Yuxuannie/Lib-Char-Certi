@@ -41,7 +41,7 @@ def test_build_pr_table_uses_absolute_script_and_root_paths(tmp_path, monkeypatc
 
     assert result.stage_execution["status"] == "passed"
     assert Path(captured["cmd"][1]).is_absolute()
-    assert captured["cmd"][1].endswith("2-data_process/get_PR/Sigma/check_sigma_with_waivers.py")
+    assert captured["cmd"][1].endswith("engines/get_pr/Sigma/check_sigma_with_waivers.py")
     root_arg = captured["cmd"][captured["cmd"].index("--root_path") + 1]
     assert Path(root_arg).is_absolute()
     assert captured["cwd"] == str(Path(__file__).resolve().parents[1])
