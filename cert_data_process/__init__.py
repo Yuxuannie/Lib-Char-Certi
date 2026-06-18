@@ -1,7 +1,8 @@
-"""cert_data_process package skeleton.
+"""cert_data_process — library characterization certification pipeline.
 
-Phase 1 starts with CLI/config/output-tree scaffolding only. Functional stage
-implementations are intentionally added in later PRs.
+Parses Monte Carlo / FMC results, joins them against the characterized library,
+and produces PR (pass-rate) tables and outlier analysis. The desktop console
+(`python -m cert_data_process.app`) is the primary product surface.
 """
 
-__version__ = "0.1.0"
+__version__ = "1.0.0"

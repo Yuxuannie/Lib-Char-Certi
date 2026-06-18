@@ -67,8 +67,9 @@ PLANNED_STAGE_STATUS = (
     {
         "stage": "build_pr_table",
         "pipeline": "sigma",
-        "implemented": False,
+        "implemented": True,
         "planned_pr": "PR 6",
+        "note": "Native sigma PR table (Base_PR + Waiver1 CI+6%); see stages/get_pr_sigma.py.",
     },
     {
         "stage": "get_pr_moments",
