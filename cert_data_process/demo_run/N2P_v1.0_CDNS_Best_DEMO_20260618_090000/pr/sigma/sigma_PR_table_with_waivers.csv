@@ -1,0 +1,7 @@
+Corner,Type,Nominal_Base_PR,Nominal_PR_with_Waiver1,Early_Sigma_Base_PR,Early_Sigma_PR_with_Waiver1,Late_Sigma_Base_PR,Late_Sigma_PR_with_Waiver1,Total_Arcs,Covered,Data_Health
+ssgnp_0p675v_125c,delay,100.0,100.0,96.7,98.3,90.0,95.0,60,60,OK
+ssgnp_0p675v_125c,slew,100.0,100.0,97.5,100.0,97.5,97.5,40,40,OK
+ssgnp_0p675v_125c,hold,,,,,88.0,92.0,50,50,OK
+ssgnp_0p675v_m40c,delay,100.0,100.0,100.0,100.0,96.7,98.3,60,60,OK
+ssgnp_0p675v_m40c,slew,100.0,100.0,100.0,100.0,92.5,97.5,40,40,OK
+ssgnp_0p675v_m40c,hold,,,,,98.0,98.0,50,50,OK

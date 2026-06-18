@@ -102,7 +102,10 @@ def test_app_constructs_and_renders(tmp_path, fake_tk):
     assert app._offender_matches("combinational_B_Z_rise_A_rise_NO_CONDITION_3_5", off) is False
     app._common_key = "cell_table_point"
     assert app._offender_matches(arc, off) is True
-    # Voltage Margin Analysis tab render paths (failed + ok), under mocked tk
+    # Voltage Margin Analysis tab render paths (failed + ok), under mocked tk.
+    # The tab is hidden in v1 (SHOW_ANALYSIS=False), so build it explicitly to keep
+    # exercising the VM render logic (still valid, just not surfaced in v1).
+    app._build_analysis()
     app._run_vm()  # no loaded_rec -> info dialog path, no crash
     app._render_vm({"ok": False, "reason": "no_sigma_rpt_inputs", "out_dir": "/x", "stderr_tail": "boom"})
     app._render_vm({

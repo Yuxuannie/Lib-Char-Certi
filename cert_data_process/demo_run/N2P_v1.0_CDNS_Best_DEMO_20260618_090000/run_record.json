@@ -1,0 +1,215 @@
+{
+  "config": {
+    "abs_tol_ps_by_corner": {
+      "ssgnp_0p675v_125c": 15.0,
+      "ssgnp_0p675v_m40c": 15.0
+    },
+    "corners": [
+      "ssgnp_0p675v_125c",
+      "ssgnp_0p675v_m40c"
+    ],
+    "fmc_golden_dir": "/demo/fmc (synthetic)",
+    "fmc_input_dir": null,
+    "fmc_mode": "decks",
+    "fmc_unit": "ps",
+    "lib_dir": "/demo/lib (synthetic)",
+    "lib_unit": "ps",
+    "library_type": "mb",
+    "output_dir": "/Users/nieyuxuan/Downloads/Work/Lib-Char-Certi/cert_data_process/demo_run/N2P_v1.0_CDNS_Best_DEMO_20260618_090000",
+    "process": "n2p",
+    "process_version": "v1p0",
+    "rc_type": "cworst",
+    "types": [
+      "delay",
+      "slew",
+      "hold"
+    ],
+    "vendor": "cdns",
+    "vt_type": "svt"
+  },
+  "id": "N2P_v1.0_CDNS_Best_DEMO_20260618_090000",
+  "libdir": "/demo/lib (synthetic)",
+  "library_type": "mb",
+  "moments": [
+    {
+      "corner": "ssgnp_0p675v_125c",
+      "covered": 60,
+      "health": "OK",
+      "ms": 98.3,
+      "msW1": 100.0,
+      "skew": 100.0,
+      "skewW1": 100.0,
+      "std": 98.3,
+      "stdW1": 98.3,
+      "total": 60,
+      "type": "delay"
+    },
+    {
+      "corner": "ssgnp_0p675v_125c",
+      "covered": 40,
+      "health": "OK",
+      "ms": 100.0,
+      "msW1": 100.0,
+      "skew": 100.0,
+      "skewW1": 100.0,
+      "std": 100.0,
+      "stdW1": 100.0,
+      "total": 40,
+      "type": "slew"
+    },
+    {
+      "corner": "ssgnp_0p675v_m40c",
+      "covered": 60,
+      "health": "OK",
+      "ms": 100.0,
+      "msW1": 100.0,
+      "skew": 100.0,
+      "skewW1": 100.0,
+      "std": 100.0,
+      "stdW1": 100.0,
+      "total": 60,
+      "type": "delay"
+    },
+    {
+      "corner": "ssgnp_0p675v_m40c",
+      "covered": 40,
+      "health": "OK",
+      "ms": 100.0,
+      "msW1": 100.0,
+      "skew": 100.0,
+      "skewW1": 100.0,
+      "std": 100.0,
+      "stdW1": 100.0,
+      "total": 40,
+      "type": "slew"
+    }
+  ],
+  "name": "N2P v1.0 CDNS Best (DEMO)",
+  "process": "n2p",
+  "rc_type": "cworst",
+  "recipe": "N2P_v1.0_CDNS_Best_DEMO_20260618_090000",
+  "schema_version": 1,
+  "sigma": [
+    {
+      "corner": "ssgnp_0p675v_125c",
+      "covered": 60,
+      "eBase": 96.7,
+      "eW1": 98.3,
+      "health": "OK",
+      "lBase": 90.0,
+      "lW1": 95.0,
+      "nomBase": 100.0,
+      "nomW1": 100.0,
+      "total": 60,
+      "type": "delay"
+    },
+    {
+      "corner": "ssgnp_0p675v_125c",
+      "covered": 40,
+      "eBase": 97.5,
+      "eW1": 100.0,
+      "health": "OK",
+      "lBase": 97.5,
+      "lW1": 97.5,
+      "nomBase": 100.0,
+      "nomW1": 100.0,
+      "total": 40,
+      "type": "slew"
+    },
+    {
+      "abs_tol_ps": 15.0,
+      "corner": "ssgnp_0p675v_125c",
+      "covered": 50,
+      "eBase": null,
+      "eW1": null,
+      "health": "OK",
+      "lBase": 88.0,
+      "lW1": 92.0,
+      "lW2": 100.0,
+      "n_waived_by_w2": 4,
+      "nomBase": null,
+      "nomW1": null,
+      "total": 50,
+      "type": "hold"
+    },
+    {
+      "corner": "ssgnp_0p675v_m40c",
+      "covered": 60,
+      "eBase": 100.0,
+      "eW1": 100.0,
+      "health": "OK",
+      "lBase": 96.7,
+      "lW1": 98.3,
+      "nomBase": 100.0,
+      "nomW1": 100.0,
+      "total": 60,
+      "type": "delay"
+    },
+    {
+      "corner": "ssgnp_0p675v_m40c",
+      "covered": 40,
+      "eBase": 100.0,
+      "eW1": 100.0,
+      "health": "OK",
+      "lBase": 92.5,
+      "lW1": 97.5,
+      "nomBase": 100.0,
+      "nomW1": 100.0,
+      "total": 40,
+      "type": "slew"
+    },
+    {
+      "abs_tol_ps": 15.0,
+      "corner": "ssgnp_0p675v_m40c",
+      "covered": 50,
+      "eBase": null,
+      "eW1": null,
+      "health": "OK",
+      "lBase": 98.0,
+      "lW1": 98.0,
+      "lW2": 98.0,
+      "n_waived_by_w2": 0,
+      "nomBase": null,
+      "nomW1": null,
+      "total": 50,
+      "type": "hold"
+    }
+  ],
+  "stages": [
+    {
+      "pipeline": "sigma,moments",
+      "reason": "",
+      "stage": "fmc_combine_data",
+      "status": "passed"
+    },
+    {
+      "pipeline": "sigma,moments",
+      "reason": "",
+      "stage": "lib_join_sigma",
+      "status": "passed"
+    },
+    {
+      "pipeline": "sigma,moments",
+      "reason": "",
+      "stage": "build_pr_table",
+      "status": "passed"
+    },
+    {
+      "pipeline": "sigma,moments",
+      "reason": "",
+      "stage": "get_pr_moments",
+      "status": "passed"
+    },
+    {
+      "pipeline": "sigma,moments",
+      "reason": "",
+      "stage": "generate_pr_web_app",
+      "status": "passed"
+    }
+  ],
+  "status": "passed",
+  "vendor": "cdns",
+  "version": "v1p0",
+  "vt_type": "svt",
+  "when_utc": "2026-06-18T09:00:00+00:00"
+}

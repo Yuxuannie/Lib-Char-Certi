@@ -4,12 +4,18 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cert-data-process"
-version = "0.1.0"
+version = "1.0.0"
 description = "Library characterization certification data_process pipeline"
 requires-python = ">=3.9"
 
+[project.optional-dependencies]
+# matplotlib powers the enriched outlier scatter; the GUI degrades to a built-in
+# Canvas scatter when it is absent, so it is optional, not required.
+plots = ["matplotlib"]
+
 [project.scripts]
 cert_data_process = "cert_data_process.cli:main"
+cert_data_process_app = "cert_data_process.app.__main__:main"
 
 [tool.setuptools.packages.find]
 include = ["cert_data_process*"]

@@ -1,0 +1,17 @@
+[
+  {
+    "corners": [
+      "ssgnp_0p675v_125c",
+      "ssgnp_0p675v_m40c"
+    ],
+    "id": "N2P_v1.0_CDNS_Best_DEMO_20260618_090000",
+    "mean_late_sigma": 93.8,
+    "name": "N2P v1.0 CDNS Best (DEMO)",
+    "process": "n2p",
+    "status": "passed",
+    "vendor": "cdns",
+    "version": "v1p0",
+    "when_utc": "2026-06-18T09:00:00+00:00",
+    "worst_health": "OK"
+  }
+]
