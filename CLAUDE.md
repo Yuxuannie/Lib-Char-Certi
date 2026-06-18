@@ -23,13 +23,25 @@ cert_data_process/
 ├── cli.py               # CLI 入口,materialize output tree + 调度 stages
 ├── config.py            # CertDataProcessConfig (frozen dataclass)
 ├── parsers/             # fmc_log, full_mc_report, summary_csv, arc_dir_name
-└── stages/              # fmc_combine_data, full_mc_parse_and_normalize,
-                         # lib_join_sigma, get_pr_sigma, pr_web_app
+├── stages/              # fmc_combine_data, full_mc_parse_and_normalize,
+│                        # lib_join_sigma, get_pr_sigma, get_pr_moments, pr_web_app
+├── analysis/            # consolidate, outliers, perarc, plots, waivers, common
+├── app/                 # Tkinter 桌面 console(主入口 python -m cert_data_process.app)
+├── runtime/             # 运行/会话数据层 + 无 Tk 的 HTTP fallback(原 web/,已重命名)
+│                        #   runs / summary / executor / server / __main__
+├── engines/             # 收进包的 live legacy 引擎(运行时正本,见下)
+│   ├── combine/         #   Combine_FMC_and_{CDNS,SNPS}_lib.py + run_ldbx.tcl
+│   └── get_pr/{Sigma,Moments}/   # check_sigma_with_waivers.py / check_moments_from_fmc.py
+├── web_assets/          # certi_console.html(HTML dashboard 模板,原 gui/)
+└── demo_run/            # 自带 demo 批次(python -m cert_data_process.app --demo)
 ```
 
-- 当前是 **Phase 1 skeleton**:CLI、config validation、output tree、run_manifest 已完成;**多数 stage 尚未原生实现或仅 wrap legacy 脚本**。
-- `cli.py:PLANNED_STAGE_STATUS` 列出每个 stage 的 `implemented` 状态和 `planned_pr` 编号——动 stage 前先读这个表。
-- 例:`stages/get_pr_sigma.py` 当前是 `subprocess` 调 `2-data_process/get_PR/Sigma/check_sigma_with_waivers.py`,后续 PR 才会原生实现。它会把 PR 产出复制到 `output_dir/pr/sigma/` 并在终端打印 PR 表。
+- v1.0 已交付:桌面 app 主入口,sigma/moments PR + outlier 钻取 + waiver1/2 全通。
+- `cli.py:PLANNED_STAGE_STATUS` 列出每个 stage 的 `implemented` 状态——动 stage 前先读这个表。
+- **stage 仍 shell-out 到引擎,但引擎已收进包**:`stages/lib_join_sigma.py` → `engines/combine/`,
+  `stages/get_pr_sigma.py` → `engines/get_pr/Sigma/`,`stages/get_pr_moments.py` → `engines/get_pr/Moments/`。
+  这些是 `2-data_process/` 原件的运行时正本副本;**改运行时行为请改 `engines/` 下的,不是 `2-data_process/`**。
+  真实跑批需要 pandas/numpy(combine 还需 EDA 的 `ldbx`)。
 
 ### 2.2 Legacy 树(参考标准,不要随便删)
 

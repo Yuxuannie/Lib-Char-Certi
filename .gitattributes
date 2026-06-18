@@ -1,0 +1,22 @@
+# Delivery packaging — files excluded from `git archive` (the delivery ZIP).
+# These stay in the repo (reference / dev), but are NOT shipped to users.
+# Build the ZIP with: scripts/make_delivery.sh
+
+# Legacy reference trees (runtime engines were relocated into cert_data_process/engines/)
+1-Parse/            export-ignore
+2-data_process/     export-ignore
+
+# Internal design docs and roadmap (keep USER_GUIDE.md + images, which DO ship)
+docs/superpowers/   export-ignore
+ROADMAP.md          export-ignore
+
+# Dev-only: tests, byte-equal regression scripts, the packaging script itself
+tests/              export-ignore
+scripts/compare_fmc_csv_byte_equal.py   export-ignore
+scripts/compare_mc_csv_byte_equal.py    export-ignore
+scripts/make_delivery.sh                export-ignore
+
+# Agent/working instructions, not part of the product
+CLAUDE.md           export-ignore
+.gitattributes      export-ignore
+.gitignore          export-ignore
