@@ -1,0 +1,5 @@
+Corner,Type,Meanshift_Base_PR,Std_Base_PR,Skew_Base_PR,Meanshift_PR_with_Waiver1,Std_PR_with_Waiver1,Skew_PR_with_Waiver1,Total_Arcs,Covered,Data_Health
+ssgnp_0p675v_125c,delay,98.3,98.3,100.0,100.0,98.3,100.0,60,60,OK
+ssgnp_0p675v_125c,slew,100.0,100.0,100.0,100.0,100.0,100.0,40,40,OK
+ssgnp_0p675v_m40c,delay,100.0,100.0,100.0,100.0,100.0,100.0,60,60,OK
+ssgnp_0p675v_m40c,slew,100.0,100.0,100.0,100.0,100.0,100.0,40,40,OK
