@@ -6,32 +6,116 @@ sub-threshold corners, and lets two parties (the library team and the EDA vendor
 **drill into any failing point down to the source `.lib` cell and FMC input row**
 — so an outlier can be cross-checked, not just counted.
 
-This guide walks the whole flow on bundled demo data; no real inputs required.
+This guide walks the whole flow on **your real inputs**, from Setup through the
+outlier cross-check.
+
+> **About the screenshots in this guide.** Each step has a callout that tells you
+> exactly which screen to capture and the file name to save it under
+> (`docs/images/NN_*.png`). The placeholder frames you currently see are meant to
+> be replaced with screenshots from your own run. See
+> [§8 Adding your screenshots](#8-adding-your-screenshots).
 
 ---
 
-## 1. Launch
+## Table of contents
+
+1. [Requirements](#1-requirements)
+2. [Install](#2-install)
+3. [Prepare your input folder](#3-prepare-your-input-folder)
+4. [Launch](#4-launch)
+5. [The tabs at a glance](#5-the-tabs-at-a-glance)
+6. [Step-by-step: certifying your library](#6-step-by-step-certifying-your-library)
+7. [Waivers — terminology](#7-waivers--terminology)
+8. [Adding your screenshots](#8-adding-your-screenshots)
+9. [Troubleshooting](#9-troubleshooting)
+
+---
+
+## 1. Requirements
+
+| Component | Requirement |
+|-----------|-------------|
+| **Python** | **3.9 or newer** (developed/tested on 3.9–3.11). The repo pins `requires-python = ">=3.9"`. |
+| **Tkinter** | Required for the desktop console. It ships with most CPython builds; most EDA host Pythons already have it. Verify with `python -c "import tkinter"`. |
+| **pandas / numpy** | Required for real certification runs (parsing FMC data and computing PR). |
+| **matplotlib** | *Optional* — enriches the outlier scatter. Without it the GUI falls back to a built-in Canvas plot. |
+| **EDA `ldbx`** | Required only for the **lib-join / combine** step against real `.lib` decks. It is provided by your EDA environment and is **not** installable from PyPI. |
+
+Check your Python version before anything else:
+
+```bash
+python --version        # must print 3.9.x or newer
+python -c "import tkinter; print('tkinter ok')"
+```
+
+---
+
+## 2. Install
+
+From the repository root:
+
+```bash
+# Core install (editable):
+pip install -e .
+
+# With the optional scatter plotting extra:
+pip install -e ".[plots]"      # or simply: pip install matplotlib
+```
+
+> On EDA hosts without PyPI access, use the interpreter your flow already provides
+> (it normally has pandas/numpy/Tkinter and the `ldbx` module). You do not need to
+> reinstall those.
+
+---
+
+## 3. Prepare your input folder
+
+Put your real inputs under the `input/` folder at the repo root (create it if it
+doesn't exist). The tool never modifies your inputs — it only reads them and writes
+results under `./certi_runs`.
+
+A typical layout:
+
+```
+input/
+├── fmc/        # FMC reference data — decks to parse, or pre-parsed DFDS / SCLD
+└── lib/        # the characterized .lib files to certify
+```
+
+You point the tool at these two directories from the **Setup** tab (the **FMC dir**
+and **Lib dir** browse buttons). The folder names above are only a suggestion —
+any path works, as long as you browse to it in Setup.
+
+The **FMC input mode** you pick in Setup decides what the **FMC dir** should
+contain:
+
+| FMC input mode | What `input/fmc/` should hold |
+|----------------|-------------------------------|
+| **Decks (parse)** | raw FMC decks; the tool parses them |
+| **Parsed DFDS** | already-parsed DFDS output |
+| **Parsed SCLD** | already-parsed SCLD golden data (note: SCLD golden is in `ns`) |
+
+See [`input/README.md`](../input/README.md) for the same notes next to the data.
+
+---
+
+## 4. Launch
 
 The tool is a single Tkinter process — no server, no port. It displays over
 X11 / Exceed like a terminal.
 
 ```bash
 # From the repo root, on a host whose Python has Tkinter:
-python -m cert_data_process.app            # normal: reads ./certi_runs
-python -m cert_data_process.app --demo     # open the bundled demo (no data needed)
+python -m cert_data_process.app                 # reads ./certi_runs
+python -m cert_data_process.app --runs-dir /path/to/runs   # custom runs root
 ```
 
-> **First time? Use `--demo`.** It loads a synthetic batch (`N2P v1.0 CDNS Best
-> (DEMO)`) so you can click through every screen before touching real data. The
-> demo numbers are fabricated but internally consistent — every PR matches the
-> per-arc data behind it.
-
-If you see `ERROR: this Python has no Tkinter`, pick a Python built with Tk (most
-EDA host Pythons have it; a stock `python3` usually works).
+If you see `ERROR: this Python has no Tkinter`, select a Python built with Tk
+(most EDA host Pythons have it; a stock `python3` usually works).
 
 ---
 
-## 2. The tabs at a glance
+## 5. The tabs at a glance
 
 | Tab | What it answers |
 |-----|-----------------|
@@ -48,52 +132,96 @@ EDA host Pythons have it; a stock `python3` usually works).
 
 ---
 
-## 3. Five-minute demo tour
+## 6. Step-by-step: certifying your library
 
-Launch with `--demo`, then:
+### 6.1 Setup — describe and launch the run
 
-### 3.1 History → open the batch
-Go to **History**. You'll see one row: `N2P v1.0 CDNS Best (DEMO)`, vendor `cdns`,
-mean Late-Sigma `93.8%`, status `passed`. Double-click it to load it into Results.
+Open the **Setup** tab and fill in:
 
-![History](images/07_history.png)
+| Field | Notes |
+|-------|-------|
+| **Vendor** | `cdns` or `snps` (sets the default lib unit) |
+| **Process / version** | e.g. `n2p` / `v1p0` |
+| **Corners** | add each corner; or pull from History |
+| **Timing types** | delay / slew / hold / mpw |
+| **VT / RC type, Library type** | metadata for the run record |
+| **FMC unit / Lib unit** | inputs are converted to ps internally; defaults track vendor/format |
+| **abs_tol ps (hold)** | Waiver_2. One value for all corners, or `c1=19.5, c2=20`. **Blank = off.** If you type something unparseable, the tool *warns* instead of silently disabling W2. |
+| **FMC input** | Decks (parse) / Parsed DFDS / Parsed SCLD — the FMC-dir label updates to match |
+| **FMC dir / Lib dir** | **Browse** to your `input/fmc` and `input/lib` directories |
 
-### 3.2 Results — the verdict, and how waivers move it
+Click **▶ Run certification**. Moments (meanshift / std / skew) are derived from
+the FMC data — no separate Full-MC run is needed.
+
+> 📸 **Screenshot needed → save as `docs/images/01_setup.png`**
+> Capture the **Setup** tab after you've filled in vendor/process/corners and
+> browsed to your input folders, just before clicking **Run certification**.
+
+![Setup tab](images/01_setup.png)
+
+### 6.2 Pipeline — watch the run progress
+
+The **Pipeline** tab streams each stage as it runs and surfaces any per-stage
+audit findings. Wait for the run to finish; results then land in **Results**.
+
+> 📸 **Screenshot needed → save as `docs/images/02_pipeline.png`**
+> Capture the **Pipeline** tab during or just after a run, showing the stage
+> list and any audit findings.
+
+![Pipeline tab](images/02_pipeline.png)
+
+### 6.3 Results — the verdict, and how waivers move it
+
 The **Results** tab groups PR by timing type (delay / slew / hold). Cells are
-green ≥95%, amber 90–95%, red <95%. Toggle the **basis** radios at the top:
+green ≥95%, amber 90–95%, red <95%. Toggle the **basis** radios at the top to see
+how each waiver changes the verdict:
 
-| Basis | Demo verdict | Why |
-|-------|--------------|-----|
-| **Base** | ❌ FAIL — 3 metrics <95% | raw pass rate |
-| **+Waiver1** (CI +6%) | ❌ FAIL — hold still 92% | CI enlargement recovers delay, not hold |
-| **+Waiver2** (abs_tol) | ✅ PASS | abs_tol (15 ps) waives the 4 marginal hold arcs |
+| Basis | Meaning |
+|-------|---------|
+| **Base** | raw pass rate, no waivers |
+| **+Waiver1** (CI +6%) | CI bounds enlarged 6% |
+| **+Waiver2** (abs_tol) | your supplied `abs_tol` (ps), hold Late_Sigma only, stacked on Base+W1 |
 
 This is the core story: a library that fails raw can certify once the agreed
 waivers are applied — and the tool shows exactly which arcs each waiver rescued.
 
-![Results](images/02_results.png)
+> 📸 **Screenshot needed → save as `docs/images/03_results.png`**
+> Capture the **Results** tab with the basis radios visible. If your data tells a
+> good story, grab one screenshot per basis (Base vs +Waiver1 vs +Waiver2) and
+> add `03b_*` / `03c_*` files of your own.
 
-### 3.3 PR Status — consolidated pivot
+![Results tab](images/03_results.png)
+
+### 6.4 PR Status — consolidated pivot
+
 **PR Status → Build.** Rows are data-types (`ocv_const_hold`, `ocv_delay_late`,
-…), columns are each batch × corner. On `+Waiver1` basis the demo shows
-`ocv_const_hold @ ssgnp_0p675v_125c` amber at **92.0%** — everything else green.
+…); columns are each batch × corner. Switch basis to see waivers applied across
+every corner at once.
 
-![PR Status](images/03_pr_status.png)
+> 📸 **Screenshot needed → save as `docs/images/04_pr_status.png`**
+> Capture the **PR Status** pivot after clicking **Build**, with a basis selected.
 
-### 3.4 Outliers — what's actually failing
+![PR Status tab](images/04_pr_status.png)
+
+### 6.5 Outliers — what's actually failing
+
 **Outliers → Build** (try the **Base** basis to see the most points). Each row is
 a sub-95% (metric, corner) with its failure breakdown: `#cells`, `#opt`
-(optimistic = Lib<MC, library claims *better* than silicon), `#pess`, polarity,
-worst error. For the demo hold point you'll see **6 cells, 3 opt / 3 pess, worst
-rel-err 23.3%**.
+(optimistic = Lib<MC, i.e. the library claims *better* than silicon), `#pess`,
+polarity, and worst error.
 
 > A `?` in a breakdown column means the per-arc CSV for that corner/type wasn't
 > found (not a failure — just no detail to expand). The hint line under the table
 > explains this.
 
-![Outliers](images/04_outliers.png)
+> 📸 **Screenshot needed → save as `docs/images/05_outliers.png`**
+> Capture the **Outliers** table after **Build**, on the **Base** basis so the
+> breakdown columns are populated.
 
-### 3.5 Outlier scatter + source trace-back — the cross-check
+![Outliers tab](images/05_outliers.png)
+
+### 6.6 Outlier scatter + source trace-back — the cross-check
+
 **Double-click an Outliers row** to open the drill-down: a Lib-vs-MC scatter (with
 a residual / rel-error view and Normal/Log scale), plus ranked lists of the worst
 cells, table-points, and arcs. **Double-click a worst-arc** to open its detail:
@@ -107,41 +235,41 @@ cells, table-points, and arcs. **Double-click a worst-arc** to open its detail:
 This is the workflow two teams use to settle "is this outlier real?" without
 emailing files back and forth.
 
-![Outlier scatter](images/06_scatter.png)
+> 📸 **Screenshot needed → save as `docs/images/06_outlier_drill.png`**
+> Capture the drill-down window: the Lib-vs-MC scatter plus the worst-arc / source
+> trace-back panel.
+
+![Outlier drill-down](images/06_outlier_drill.png)
 
 > If `matplotlib` isn't installed, the scatter degrades to a built-in Canvas plot
 > — the rankings and source trace-back work either way.
 
-### 3.6 Common offenders — systematic vs one-off
+### 6.7 Common offenders — systematic vs one-off
+
 **Common** finds cells/arcs that fail across *multiple* contexts (corners/batches),
 grouped by cell, cell+arc, or cell+table-point. Select several batches in History
 first to compare recipes. Double-click an offender to see every place it fails.
 
-![Common](images/05_common.png)
+> 📸 **Screenshot needed → save as `docs/images/07_common.png`**
+> Capture the **Common** tab after grouping, ideally with several batches selected
+> in History.
+
+![Common offenders tab](images/07_common.png)
+
+### 6.8 History — managing and scoping runs
+
+**History** lists every past run. Double-click a row to load it into **Results**;
+▢-check several rows to scope **PR Status**, **Outliers**, and **Common** to just
+those batches.
+
+> 📸 **Screenshot needed → save as `docs/images/08_history.png`**
+> Capture the **History** tab showing one or more completed runs.
+
+![History tab](images/08_history.png)
 
 ---
 
-## 4. Running your own data (Setup tab)
-
-| Field | Notes |
-|-------|-------|
-| **Vendor** | `cdns` or `snps` (sets default lib unit) |
-| **Process / version** | e.g. `n2p` / `v1p0` |
-| **Corners** | add each corner; or pull from History |
-| **Timing types** | delay / slew / hold / mpw |
-| **VT / RC type, Library type** | metadata for the run record |
-| **FMC unit / Lib unit** | inputs are converted to ps internally; defaults track vendor/format |
-| **abs_tol ps (hold)** | Waiver_2. One value for all corners, or `c1=19.5, c2=20`. **Blank = off.** If you type something unparseable, the tool now *warns* instead of silently disabling W2. |
-| **FMC input** | Decks (parse) / Parsed DFDS / Parsed SCLD — the FMC-dir label updates to match |
-| **FMC dir / Lib dir** | Browse to the inputs |
-
-Click **▶ Run certification** → watch **Pipeline** → results land in **Results**.
-Moments (meanshift / std / skew) are derived from the FMC data — no Full-MC run
-is needed.
-
----
-
-## 5. Waivers — terminology
+## 7. Waivers — terminology
 
 - **Base PR** — raw pass rate, no waivers.
 - **Waiver1** — CI bounds enlarged 6% (the engine's `Waiver1_CI_Enlarged`).
@@ -151,23 +279,70 @@ is needed.
 (Waiver3 is handled downstream by the separate Voltage-Margin tool and is out of
 scope here.)
 
+> Note the scope: "Waiver1 / Waiver2" above are the **in-tool** implementation
+> columns. In the broader cert flow, everything this tool produces (Base + both
+> in-tool waivers) is what the wider process calls `waiver_1`; the
+> process-level `waiver_2` (`abs_tol` supplied by you) and `waiver_3` (Voltage
+> Margin) are separate stages.
+
 ---
 
-## 6. Screenshots in this guide
+## 8. Adding your screenshots
 
-The figures live in `docs/images/`. To (re)generate them against the demo on a
-machine with a display:
+Every figure in this guide lives in `docs/images/` and is referenced with a
+relative path (e.g. `images/01_setup.png`), so the links resolve both on GitHub
+and in the exported Word document.
+
+To add a real screenshot, **save your capture over the matching placeholder**,
+keeping the file name:
+
+| Step | File to replace |
+|------|-----------------|
+| 6.1 Setup | `docs/images/01_setup.png` |
+| 6.2 Pipeline | `docs/images/02_pipeline.png` |
+| 6.3 Results | `docs/images/03_results.png` |
+| 6.4 PR Status | `docs/images/04_pr_status.png` |
+| 6.5 Outliers | `docs/images/05_outliers.png` |
+| 6.6 Outlier drill-down | `docs/images/06_outlier_drill.png` |
+| 6.7 Common | `docs/images/07_common.png` |
+| 6.8 History | `docs/images/08_history.png` |
+
+The placeholder frames currently in those files are solid grey boxes — once you
+drop in a real PNG with the same name, the guide and the exported Word document
+pick it up automatically.
+
+### Exporting a Word document to share by email
+
+A Word document `docs/USER_GUIDE.docx` is generated from this Markdown so you can
+attach it to an email. **Regenerate it after you add your screenshots** so they
+are embedded in the document:
 
 ```bash
-python scripts/make_demo_screenshots.py     # needs Tkinter + a display
+python scripts/make_user_guide_doc.py
 ```
 
-On macOS this needs Screen-Recording permission for your terminal; on Linux it
-uses ImageMagick's `import`. If a figure is missing, the step text above still
-describes exactly what you'll see.
+This converts `docs/USER_GUIDE.md` to `docs/USER_GUIDE.docx`, **embedding** the
+screenshots from `docs/images/` directly into the file (one self-contained
+attachment). It uses only the Python standard library — no pandoc, LibreOffice,
+or pip packages required.
 
-To regenerate the demo data itself:
+> **Need a legacy `.doc`?** `.docx` opens in Word 2007+, Outlook's preview pane,
+> Google Docs and LibreOffice. If a recipient specifically needs the old binary
+> `.doc`, open `USER_GUIDE.docx` in Word and **Save As → Word 97-2003 (.doc)**.
 
-```bash
-python scripts/make_demo_run.py
-```
+---
+
+## 9. Troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
+| `ERROR: this Python has no Tkinter` | Use a Python built with Tk: `python -c "import tkinter"` should succeed. Most EDA host Pythons qualify. |
+| Run fails immediately on a real deck | Confirm pandas/numpy are importable, and for lib-join that the EDA `ldbx` module is on `PYTHONPATH`. |
+| Outlier breakdown columns show `?` | The per-arc CSV for that corner/type wasn't found — there's no detail to expand, but it's not a failure. |
+| Scatter looks basic (no matplotlib styling) | `matplotlib` isn't installed; the Canvas fallback is in use. `pip install matplotlib` for the richer view. |
+| Waiver2 seems ignored | Check the **abs_tol ps (hold)** field — blank means off; an unparseable value now raises a warning. |
+
+---
+
+*Headless / scripted runs:* a command-line pipeline also exists for batch use —
+`python -m cert_data_process.cli --help`.
