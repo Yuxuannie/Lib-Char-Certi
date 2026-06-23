@@ -1,6 +1,6 @@
 """FMC Combine_data stage — parse FMC golden outputs into normalized CSVs.
 
-This mirrors the legacy `2-data_process/Combine_data/calculate.py` extraction
+This mirrors the legacy `archive/2-data_process/Combine_data/calculate.py` extraction
 logic. Byte-for-byte output equality with the legacy flow is NOT a goal; the
 contract is that pass-rate results are correct and reasonable. Numeric
 representation may differ across Python versions/platforms.

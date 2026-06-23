@@ -40,20 +40,25 @@ cert_data_process/
 - `cli.py:PLANNED_STAGE_STATUS` 列出每个 stage 的 `implemented` 状态——动 stage 前先读这个表。
 - **stage 仍 shell-out 到引擎,但引擎已收进包**:`stages/lib_join_sigma.py` → `engines/combine/`,
   `stages/get_pr_sigma.py` → `engines/get_pr/Sigma/`,`stages/get_pr_moments.py` → `engines/get_pr/Moments/`。
-  这些是 `2-data_process/` 原件的运行时正本副本;**改运行时行为请改 `engines/` 下的,不是 `2-data_process/`**。
+  这些是 `archive/2-data_process/` 原件的运行时正本副本;**改运行时行为请改 `engines/` 下的,不是 `archive/2-data_process/`**。
   真实跑批需要 pandas/numpy(combine 还需 EDA 的 `ldbx`)。
 
 ### 2.2 Legacy 树(参考标准,不要随便删)
 
+**已归档到 `archive/`**(顶层不再平铺,避免与 active 代码混淆;`.gitattributes` 里
+`archive/ export-ignore`,不进交付包)。运行时正本已收进 `cert_data_process/engines/`。
+
 ```
-1-Parse/                # 解析脚本 (.py + .sh)
-2-data_process/
-├── Combine_Lib_and_FMC/    # lib + FMC 合并 (CDNS/SNPS 分版本)
-├── Combine_data/           # calculate.py 是新包 fmc_combine_data 的逻辑参考实现
-├── Validate_CI/            # ci_validation.py
-├── Plot/
-└── get_PR/                 # Moments/ 和 Sigma/ 各自 check_*.py + with_waivers 变体
-                            # 此目录有自己的 CLAUDE.md,描述 legacy waiver 系统
+archive/
+├── 1-Parse/                # 解析脚本 (.py + .sh)
+├── ROADMAP.md              # 早期重构路线图
+└── 2-data_process/
+    ├── Combine_Lib_and_FMC/    # lib + FMC 合并 (CDNS/SNPS 分版本)
+    ├── Combine_data/           # calculate.py 是新包 fmc_combine_data 的逻辑参考实现
+    ├── Validate_CI/            # ci_validation.py
+    ├── Plot/
+    └── get_PR/                 # Moments/ 和 Sigma/ 各自 check_*.py + with_waivers 变体
+                                # 此目录有自己的 CLAUDE.md,描述 legacy waiver 系统
 ```
 
 ### 2.3 输出正确性(已取消 byte-equal 硬约束)
@@ -99,7 +104,7 @@ cert_data_process/
 | Waiver 2 | `abs_tol` | **用户查询并提供数据,不能自动推断或编造** |
 | Waiver 3 | (Voltage Margin 处理) | 不在本 repo 范围 |
 
-**B. Legacy `get_PR/` 实现层级(`2-data_process/get_PR/CLAUDE.md` 口径)**
+**B. Legacy `get_PR/` 实现层级(`archive/2-data_process/get_PR/CLAUDE.md` 口径)**
 
 在 `check_*_with_waivers.py` 代码内部:
 - `Waiver1_CI_Enlarged` 列 = CI bounds 扩张 6%
@@ -219,14 +224,14 @@ Status 字符串约定:`"passed"` / `"failed"` / `"skipped"`。Reason 用小写 
 
 ### 6.5 Shell / 其他脚本
 
-- legacy `*.sh` / `*.csh` 在 `1-Parse/` 和 `2-data_process/` 都存在,迁移到新包时不要破坏现存调用方
+- legacy `*.sh` / `*.csh` 在 `archive/1-Parse/` 和 `archive/2-data_process/` 都存在,迁移到新包时不要破坏现存调用方
 - legacy `*.tcl`(如 `run_ldbx.tcl`)是 EDA 工具 driver,通常不需要动
 
 ### 6.6 不要清理的"看起来像 dead code"的东西
 
-- `1-Parse/` 和 `2-data_process/` 下的所有 legacy 脚本——它们是逻辑参考实现
-- `2-data_process/get_PR/` 下的 `.rpt` 文件——回归/调试时需要它们做 input
-- `2-data_process/get_PR/CLAUDE.md`——legacy waiver 系统的权威描述
+- `archive/1-Parse/` 和 `archive/2-data_process/` 下的所有 legacy 脚本——它们是逻辑参考实现
+- `archive/2-data_process/get_PR/` 下的 `.rpt` 文件——回归/调试时需要它们做 input
+- `archive/2-data_process/get_PR/CLAUDE.md`——legacy waiver 系统的权威描述
 - `check_moments_original_backup.py`——明显的 backup,但删除前先问用户
 
 ## 7. 与 Voltage Margin 项目的未来集成
@@ -249,7 +254,7 @@ Status 字符串约定:`"passed"` / `"failed"` / `"skipped"`。Reason 用小写 
 - ❌ rebase 已经 push 到远程的 commit
 - ❌ 改判定逻辑后不核对 pass-rate 是否合理(对照用户已知值)
 - ❌ 在不区分 "整体 cert flow 的 waiver_N" 和 "legacy get_PR 实现的 Waiver1/Waiver2" 的前提下讨论 waiver
-- ❌ 在没问的情况下删 legacy `1-Parse/` 和 `2-data_process/` 下任何文件
+- ❌ 在没问的情况下删 legacy `archive/1-Parse/` 和 `archive/2-data_process/` 下任何文件
 
 ---
 

@@ -11,13 +11,13 @@ from pathlib import Path
 import pytest
 
 _SCRIPTS = [
-    "2-data_process/Combine_Lib_and_FMC/Combine_FMC_and_CDNS_lib.py",
-    "2-data_process/Combine_Lib_and_FMC/Combine_FMC_and_SNPS_lib.py",
+    "cert_data_process/engines/combine/Combine_FMC_and_CDNS_lib.py",
+    "cert_data_process/engines/combine/Combine_FMC_and_SNPS_lib.py",
 ]
 
 
 def _load_find_pin_group(rel_path):
-    src = Path(rel_path).read_text()
+    src = (Path(__file__).resolve().parents[1] / rel_path).read_text()
     tree = ast.parse(src)
     for node in tree.body:
         if isinstance(node, ast.FunctionDef) and node.name == "find_pin_group":

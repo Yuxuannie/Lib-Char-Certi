@@ -1,7 +1,7 @@
 # FMC Combine_data fixtures
 
 PR 2 byte-identical regression fixtures must be produced from realistic FMC
-outputs and legacy `2-data_process/Combine_data/calculate.py`. Do not hand-write
+outputs and legacy `archive/2-data_process/Combine_data/calculate.py`. Do not hand-write
 expected CSVs.
 
 Expected fixture layout:
@@ -28,7 +28,7 @@ legacy `calculate.py` writes outputs to the current working directory:
 ```bash
 # Generate expected CSV from legacy script
 cd /tmp/legacy_fixture_gen  # any sandbox directory
-python /path/to/2-data_process/Combine_data/calculate.py \
+python /path/to/archive/2-data_process/Combine_data/calculate.py \
     /path/to/tests/fixtures/fmc_combine_data/input/gen_DECKs/ssgnp_0p450v_m40c_DECKS/delay/DECKS \
     n2p_v1p0 \
     ssgnp_0p450v_m40c \

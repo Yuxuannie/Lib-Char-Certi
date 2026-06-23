@@ -7,7 +7,8 @@ import pandas as pd
 
 _SPEC = importlib.util.spec_from_file_location(
     "check_sigma_ww",
-    pathlib.Path("2-data_process/get_PR/Sigma/check_sigma_with_waivers.py"),
+    pathlib.Path(__file__).resolve().parents[1]
+    / "cert_data_process/engines/get_pr/Sigma/check_sigma_with_waivers.py",
 )
 csm = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(csm)  # safe: main() runs only under __main__ guard

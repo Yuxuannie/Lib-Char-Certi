@@ -76,7 +76,7 @@ def parse_sample_moments(report_path: Path) -> dict[str, dict[str, float]]:
 def parse_sample_moments_legacy_rows(report_path: Path) -> list[list[str]]:
     """Return legacy-like rows for Layer A validation.
 
-    Shape mirrors legacy `1-Parse/parse_mc_data.py` CSV output: first column is
+    Shape mirrors legacy `archive/1-Parse/parse_mc_data.py` CSV output: first column is
     metric label, followed by `half_tt_out`, `meas_delay`, `meas_tt_out`.
     """
 
