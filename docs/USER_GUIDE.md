@@ -6,14 +6,8 @@ sub-threshold corners, and lets two parties (the library team and the EDA vendor
 **drill into any failing point down to the source `.lib` cell and FMC input row**
 — so an outlier can be cross-checked, not just counted.
 
-This guide walks the whole flow on **your real inputs**, from Setup through the
-outlier cross-check.
-
-> **About the screenshots in this guide.** Each step has a callout that tells you
-> exactly which screen to capture and the file name to save it under
-> (`docs/images/NN_*.png`). The placeholder frames you currently see are meant to
-> be replaced with screenshots from your own run. See
-> [§8 Adding your screenshots](#8-adding-your-screenshots).
+This guide walks the whole flow on real inputs, from Setup through the outlier
+cross-check.
 
 ---
 
@@ -26,8 +20,7 @@ outlier cross-check.
 5. [The tabs at a glance](#5-the-tabs-at-a-glance)
 6. [Step-by-step: certifying your library](#6-step-by-step-certifying-your-library)
 7. [Waivers — terminology](#7-waivers--terminology)
-8. [Adding your screenshots](#8-adding-your-screenshots)
-9. [Troubleshooting](#9-troubleshooting)
+8. [Troubleshooting](#8-troubleshooting)
 
 ---
 
@@ -153,20 +146,12 @@ Open the **Setup** tab and fill in:
 Click **▶ Run certification**. Moments (meanshift / std / skew) are derived from
 the FMC data — no separate Full-MC run is needed.
 
-> 📸 **Screenshot needed → save as `docs/images/01_setup.png`**
-> Capture the **Setup** tab after you've filled in vendor/process/corners and
-> browsed to your input folders, just before clicking **Run certification**.
-
 ![Setup tab](images/01_setup.png)
 
 ### 6.2 Pipeline — watch the run progress
 
 The **Pipeline** tab streams each stage as it runs and surfaces any per-stage
 audit findings. Wait for the run to finish; results then land in **Results**.
-
-> 📸 **Screenshot needed → save as `docs/images/02_pipeline.png`**
-> Capture the **Pipeline** tab during or just after a run, showing the stage
-> list and any audit findings.
 
 ![Pipeline tab](images/02_pipeline.png)
 
@@ -185,11 +170,6 @@ how each waiver changes the verdict:
 This is the core story: a library that fails raw can certify once the agreed
 waivers are applied — and the tool shows exactly which arcs each waiver rescued.
 
-> 📸 **Screenshot needed → save as `docs/images/03_results.png`**
-> Capture the **Results** tab with the basis radios visible. If your data tells a
-> good story, grab one screenshot per basis (Base vs +Waiver1 vs +Waiver2) and
-> add `03b_*` / `03c_*` files of your own.
-
 ![Results tab](images/03_results.png)
 
 ### 6.4 PR Status — consolidated pivot
@@ -197,9 +177,6 @@ waivers are applied — and the tool shows exactly which arcs each waiver rescue
 **PR Status → Build.** Rows are data-types (`ocv_const_hold`, `ocv_delay_late`,
 …); columns are each batch × corner. Switch basis to see waivers applied across
 every corner at once.
-
-> 📸 **Screenshot needed → save as `docs/images/04_pr_status.png`**
-> Capture the **PR Status** pivot after clicking **Build**, with a basis selected.
 
 ![PR Status tab](images/04_pr_status.png)
 
@@ -213,10 +190,6 @@ polarity, and worst error.
 > A `?` in a breakdown column means the per-arc CSV for that corner/type wasn't
 > found (not a failure — just no detail to expand). The hint line under the table
 > explains this.
-
-> 📸 **Screenshot needed → save as `docs/images/05_outliers.png`**
-> Capture the **Outliers** table after **Build**, on the **Base** basis so the
-> breakdown columns are populated.
 
 ![Outliers tab](images/05_outliers.png)
 
@@ -235,10 +208,6 @@ cells, table-points, and arcs. **Double-click a worst-arc** to open its detail:
 This is the workflow two teams use to settle "is this outlier real?" without
 emailing files back and forth.
 
-> 📸 **Screenshot needed → save as `docs/images/06_outlier_drill.png`**
-> Capture the drill-down window: the Lib-vs-MC scatter plus the worst-arc / source
-> trace-back panel.
-
 ![Outlier drill-down](images/06_outlier_drill.png)
 
 > If `matplotlib` isn't installed, the scatter degrades to a built-in Canvas plot
@@ -250,10 +219,6 @@ emailing files back and forth.
 grouped by cell, cell+arc, or cell+table-point. Select several batches in History
 first to compare recipes. Double-click an offender to see every place it fails.
 
-> 📸 **Screenshot needed → save as `docs/images/07_common.png`**
-> Capture the **Common** tab after grouping, ideally with several batches selected
-> in History.
-
 ![Common offenders tab](images/07_common.png)
 
 ### 6.8 History — managing and scoping runs
@@ -261,9 +226,6 @@ first to compare recipes. Double-click an offender to see every place it fails.
 **History** lists every past run. Double-click a row to load it into **Results**;
 ▢-check several rows to scope **PR Status**, **Outliers**, and **Common** to just
 those batches.
-
-> 📸 **Screenshot needed → save as `docs/images/08_history.png`**
-> Capture the **History** tab showing one or more completed runs.
 
 ![History tab](images/08_history.png)
 
@@ -287,52 +249,7 @@ scope here.)
 
 ---
 
-## 8. Adding your screenshots
-
-Every figure in this guide lives in `docs/images/` and is referenced with a
-relative path (e.g. `images/01_setup.png`), so the links resolve both on GitHub
-and in the exported Word document.
-
-To add a real screenshot, **save your capture over the matching placeholder**,
-keeping the file name:
-
-| Step | File to replace |
-|------|-----------------|
-| 6.1 Setup | `docs/images/01_setup.png` |
-| 6.2 Pipeline | `docs/images/02_pipeline.png` |
-| 6.3 Results | `docs/images/03_results.png` |
-| 6.4 PR Status | `docs/images/04_pr_status.png` |
-| 6.5 Outliers | `docs/images/05_outliers.png` |
-| 6.6 Outlier drill-down | `docs/images/06_outlier_drill.png` |
-| 6.7 Common | `docs/images/07_common.png` |
-| 6.8 History | `docs/images/08_history.png` |
-
-The placeholder frames currently in those files are solid grey boxes — once you
-drop in a real PNG with the same name, the guide and the exported Word document
-pick it up automatically.
-
-### Exporting a Word document to share by email
-
-A Word document `docs/USER_GUIDE.docx` is generated from this Markdown so you can
-attach it to an email. **Regenerate it after you add your screenshots** so they
-are embedded in the document:
-
-```bash
-python scripts/make_user_guide_doc.py
-```
-
-This converts `docs/USER_GUIDE.md` to `docs/USER_GUIDE.docx`, **embedding** the
-screenshots from `docs/images/` directly into the file (one self-contained
-attachment). It uses only the Python standard library — no pandoc, LibreOffice,
-or pip packages required.
-
-> **Need a legacy `.doc`?** `.docx` opens in Word 2007+, Outlook's preview pane,
-> Google Docs and LibreOffice. If a recipient specifically needs the old binary
-> `.doc`, open `USER_GUIDE.docx` in Word and **Save As → Word 97-2003 (.doc)**.
-
----
-
-## 9. Troubleshooting
+## 8. Troubleshooting
 
 | Symptom | Fix |
 |---------|-----|

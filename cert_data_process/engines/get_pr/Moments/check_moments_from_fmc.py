@@ -216,10 +216,14 @@ def generate_moments_summary_table(results, root_path, corners=None):
 def main():
     args = parse_arguments()
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    # Write the log next to the engine's other outputs (under root_path), not the
+    # current working directory — the stage invokes this engine with cwd=<repo
+    # root>, so a relative path would drop the log at the repo root.
+    main_log_file = os.path.join(args.root_path, f"moments_check_{timestamp}.log")
     logging.basicConfig(
         level=getattr(logging, args.log_level),
         format="%(asctime)s - %(levelname)s - %(message)s",
-        handlers=[logging.FileHandler(f"moments_check_{timestamp}.log"), logging.StreamHandler()],
+        handlers=[logging.FileHandler(main_log_file), logging.StreamHandler()],
     )
     logging.info("=" * 80)
     logging.info("Moments pass-rate from FMC data (Full MC removed)")

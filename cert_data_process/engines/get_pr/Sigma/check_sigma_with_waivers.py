@@ -790,9 +790,12 @@ def main():
     # Parse command line arguments
     args = parse_arguments()
 
-    # Set up a main log file
+    # Set up a main log file. Write it next to the engine's other outputs
+    # (under root_path), not the current working directory — otherwise the stage,
+    # which invokes this engine with cwd=<repo root>, would drop the log at the
+    # repo root.
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    main_log_file = f"sigma_waiver_check_{timestamp}.log"
+    main_log_file = os.path.join(args.root_path, f"sigma_waiver_check_{timestamp}.log")
 
     # Configure main logging
     logging.basicConfig(
